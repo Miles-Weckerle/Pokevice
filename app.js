@@ -47,6 +47,11 @@ const GAMES = [
   { vg: 'the-indigo-disk', label: 'Pokémon Scarlet/Violet: The Indigo Disk (DLC)', gen: 9 },
 ];
 
+// Games shown under the "Mainline" mode toggle — everything except Champions, which is its
+// own toggle option instead of a dropdown entry.
+const MAINLINE_GAMES = GAMES.filter(g => g.vg !== CHAMPIONS_VG);
+const DEFAULT_MAINLINE_GAME = 'scarlet-violet';
+
 // Newest -> oldest. Used only to decide, per Pokémon, which game's data is the
 // most current ("latest version of Pokémon info") for National Dex mode.
 // Legends-series games (e.g. Legends: Arceus) are deliberately excluded — their
@@ -89,14 +94,41 @@ function evCapsForGame(vg) {
 
 // Standard Pokémon Lvl-50 stat formula. For Champions, IV is always fixed at 31 and the EV
 // term is added directly (no /4 division); for other games EVs still divide by 4 as normal.
-function computeStat(base, statKey, ev, iv, isChampions) {
+// name -> { plus: statKey|null, minus: statKey|null } — null/null for the 5 neutral natures.
+const NATURES = {
+  hardy: { plus: null, minus: null }, lonely: { plus: 'attack', minus: 'defense' },
+  brave: { plus: 'attack', minus: 'speed' }, adamant: { plus: 'attack', minus: 'special-attack' },
+  naughty: { plus: 'attack', minus: 'special-defense' }, bold: { plus: 'defense', minus: 'attack' },
+  docile: { plus: null, minus: null }, relaxed: { plus: 'defense', minus: 'speed' },
+  impish: { plus: 'defense', minus: 'special-attack' }, lax: { plus: 'defense', minus: 'special-defense' },
+  timid: { plus: 'speed', minus: 'attack' }, hasty: { plus: 'speed', minus: 'defense' },
+  serious: { plus: null, minus: null }, jolly: { plus: 'speed', minus: 'special-attack' },
+  naive: { plus: 'speed', minus: 'special-defense' }, modest: { plus: 'special-attack', minus: 'attack' },
+  mild: { plus: 'special-attack', minus: 'defense' }, quiet: { plus: 'special-attack', minus: 'speed' },
+  bashful: { plus: null, minus: null }, rash: { plus: 'special-attack', minus: 'special-defense' },
+  calm: { plus: 'special-defense', minus: 'attack' }, gentle: { plus: 'special-defense', minus: 'defense' },
+  sassy: { plus: 'special-defense', minus: 'speed' }, careful: { plus: 'special-defense', minus: 'special-attack' },
+  quirky: { plus: null, minus: null },
+};
+const DEFAULT_NATURE = 'hardy';
+
+function natureModifier(natureName, statKey) {
+  const n = NATURES[natureName];
+  if (!n) return 1;
+  if (n.plus === statKey) return 1.1;
+  if (n.minus === statKey) return 0.9;
+  return 1;
+}
+
+function computeStat(base, statKey, ev, iv, isChampions, natureName) {
   const evTerm = isChampions ? (ev || 0) : Math.floor((ev || 0) / 4);
   const ivTerm = isChampions ? 31 : (iv ?? 31);
   const level = DISPLAY_LEVEL;
   if (statKey === 'hp') {
     return Math.floor((2 * base + ivTerm + evTerm) * level / 100) + level + 10;
   }
-  return Math.floor((2 * base + ivTerm + evTerm) * level / 100) + 5;
+  const raw = Math.floor((2 * base + ivTerm + evTerm) * level / 100) + 5;
+  return Math.floor(raw * natureModifier(natureName, statKey));
 }
 const METHOD_MAP = { 'level-up': 'level-up', machine: 'machine', egg: 'egg', tutor: 'tutor' };
 const METHOD_LABELS = { 'level-up': 'Level-up', machine: 'TM/TR', egg: 'Egg', tutor: 'Tutor', other: 'Other' };
@@ -660,6 +692,19 @@ const el = {
   teamSlotsGrid: document.getElementById('team-slots-grid'),
   slotBackdrop: document.getElementById('slot-backdrop'),
   slotModal: document.getElementById('slot-modal'),
+  searchModeToggle: document.getElementById('search-mode-toggle'),
+  teamModeToggle: document.getElementById('team-mode-toggle'),
+  importTeamBtn: document.getElementById('import-team-btn'),
+  importBackdrop: document.getElementById('import-backdrop'),
+  importModal: document.getElementById('import-modal'),
+  importCloseBtn: document.getElementById('import-close-btn'),
+  importModeToggle: document.getElementById('import-mode-toggle'),
+  importGameSelect: document.getElementById('import-game-select'),
+  importTeamName: document.getElementById('import-team-name'),
+  importTextarea: document.getElementById('import-textarea'),
+  importPreview: document.getElementById('import-preview'),
+  importParseBtn: document.getElementById('import-parse-btn'),
+  importCancelBtn: document.getElementById('import-cancel-btn'),
 };
 
 // ---------- Type group filter UI ----------
@@ -1355,13 +1400,7 @@ function renderTeamList() {
 }
 
 function populateTeamGameSelect() {
-  el.teamGameSelect.innerHTML = '';
-  for (const g of GAMES) {
-    const opt = document.createElement('option');
-    opt.value = g.vg;
-    opt.textContent = (g.vg === NATIONAL_DEX_VG || g.vg === CHAMPIONS_VG) ? g.label : `Gen ${g.gen} — ${g.label}`;
-    el.teamGameSelect.appendChild(opt);
-  }
+  populateMainlineSelect(el.teamGameSelect);
 }
 
 function createNewTeam() {
@@ -1385,7 +1424,7 @@ function openTeamEditor() {
   el.teamListPanel.style.display = 'none';
   el.teamEditorPanel.style.display = '';
   el.teamNameInput.value = currentEditingTeam.name;
-  el.teamGameSelect.value = currentEditingTeam.game;
+  setModeToggleState(el.teamModeToggle, el.teamGameSelect, currentEditingTeam.game);
   el.teamSaveStatus.textContent = '';
   renderTeamSlotsGrid();
 }
@@ -1414,17 +1453,52 @@ function saveCurrentTeam() {
   setTimeout(() => { if (el.teamSaveStatus) el.teamSaveStatus.textContent = ''; }, 2000);
 }
 
-function onTeamGameChange() {
-  const newGame = el.teamGameSelect.value;
+function applyTeamGameChange(newGame) {
   if (newGame === currentEditingTeam.game) return;
   const hasSlots = currentEditingTeam.slots.some(s => s !== null);
   if (hasSlots && !confirm('Changing the game will clear all Pokémon currently in this team. Continue?')) {
-    el.teamGameSelect.value = currentEditingTeam.game;
+    setModeToggleState(el.teamModeToggle, el.teamGameSelect, currentEditingTeam.game);
     return;
   }
   currentEditingTeam.game = newGame;
   currentEditingTeam.slots = [null, null, null, null, null, null];
+  setModeToggleState(el.teamModeToggle, el.teamGameSelect, newGame);
   renderTeamSlotsGrid();
+}
+
+// ---------- Champions/Mainline mode toggle (shared by search, team editor, import) ----------
+function populateMainlineSelect(selectEl) {
+  selectEl.innerHTML = '';
+  for (const g of MAINLINE_GAMES) {
+    const opt = document.createElement('option');
+    opt.value = g.vg;
+    opt.textContent = g.vg === NATIONAL_DEX_VG ? g.label : `Gen ${g.gen} — ${g.label}`;
+    selectEl.appendChild(opt);
+  }
+}
+
+function setModeToggleState(toggleEl, selectEl, vg) {
+  const mode = vg === CHAMPIONS_VG ? 'champions' : 'mainline';
+  toggleEl.querySelectorAll('.view-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  selectEl.style.display = mode === 'champions' ? 'none' : '';
+  if (mode === 'mainline') selectEl.value = vg;
+}
+
+function getModeToggleVg(toggleEl, selectEl) {
+  const activeBtn = toggleEl.querySelector('.view-nav-btn.active');
+  const mode = activeBtn ? activeBtn.dataset.mode : 'mainline';
+  return mode === 'champions' ? CHAMPIONS_VG : selectEl.value;
+}
+
+function wireModeToggle(toggleEl, selectEl, onChange) {
+  toggleEl.querySelectorAll('.view-nav-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      toggleEl.querySelectorAll('.view-nav-btn').forEach(b => b.classList.toggle('active', b === btn));
+      const mode = btn.dataset.mode;
+      selectEl.style.display = mode === 'champions' ? 'none' : '';
+      onChange(mode === 'champions' ? CHAMPIONS_VG : (selectEl.value || DEFAULT_MAINLINE_GAME));
+    });
+  });
 }
 
 function renderTeamSlotsGrid() {
@@ -1439,10 +1513,12 @@ function renderTeamSlotsGrid() {
     const moveNames = slot.moves.filter(Boolean).map(m => formatName(m)).join(', ') || 'No moves set';
     const itemName = slot.item ? formatName(slot.item) : 'No item';
     const abilityName = slot.ability ? formatName(slot.ability) : 'No ability';
+    const speciesName = slot.displayName || formatName(slot.pokemonName);
+    const nameLine = slot.nickname ? `${escapeHtml(slot.nickname)} <span class="hint">(${escapeHtml(speciesName)})</span>` : escapeHtml(speciesName);
     return `<div class="team-slot-card filled" data-slot-index="${i}">
       <button type="button" class="team-slot-remove" data-remove-slot="${i}">✕ remove</button>
       <img class="team-slot-sprite" loading="lazy" src="${spriteUrl(spriteId)}" onerror="this.onerror=null;this.src='${spriteFallbackUrl(spriteId)}';this.onerror=function(){this.src='${PLACEHOLDER_SPRITE}'};" alt="">
-      <div class="team-slot-name">${escapeHtml(slot.displayName || formatName(slot.pokemonName))}</div>
+      <div class="team-slot-name">${nameLine}</div>
       <div class="team-slot-item">${escapeHtml(itemName)} · ${escapeHtml(abilityName)}</div>
       <div class="team-slot-moves">${escapeHtml(moveNames)}</div>
     </div>`;
@@ -1453,8 +1529,8 @@ async function openSlotEditor(index) {
   currentSlotIndex = index;
   const existing = currentEditingTeam.slots[index];
   slotDraft = existing ? JSON.parse(JSON.stringify(existing)) : {
-    pokemonName: null, pokemonId: null, spriteId: null, displayName: null,
-    ability: null, moves: [null, null, null, null], item: null,
+    pokemonName: null, pokemonId: null, spriteId: null, displayName: null, nickname: null,
+    ability: null, moves: [null, null, null, null], item: null, nature: DEFAULT_NATURE,
     evs: emptyEvs(), ivs: currentEditingTeam.game === CHAMPIONS_VG ? null : emptyIvs(),
   };
   el.slotModal.innerHTML = '<div class="hint">Loading Pokémon data…</div>';
@@ -1512,15 +1588,17 @@ function renderStatInvestmentRows(mon) {
     const base = mon.stats[k] || 0;
     const ev = slotDraft.evs[k] || 0;
     const iv = slotDraft.ivs ? (slotDraft.ivs[k] ?? 31) : 31;
-    const projected = computeStat(base, k, ev, iv, isChampions);
+    const projected = computeStat(base, k, ev, iv, isChampions, slotDraft.nature || DEFAULT_NATURE);
     const ivControls = slotDraft.ivs ? `
       <div class="stepper-group">
         <button type="button" class="stepper-btn" data-iv-dec="${k}">−</button>
         <input type="number" min="0" max="31" data-iv-stat="${k}" value="${iv}">
         <button type="button" class="stepper-btn" data-iv-inc="${k}">+</button>
       </div>` : '';
+    const natureMod = natureModifier(slotDraft.nature || DEFAULT_NATURE, k);
+    const natureMark = natureMod > 1 ? '<span class="nature-plus">+</span>' : natureMod < 1 ? '<span class="nature-minus">−</span>' : '';
     return `<div class="stat-invest-row">
-      <span class="stat-invest-label">${STAT_LABELS[k]}</span>
+      <span class="stat-invest-label">${STAT_LABELS[k]}${natureMark}</span>
       <span class="stat-invest-base">Base ${base}</span>
       <div class="stepper-group">
         <button type="button" class="stepper-btn" data-ev-dec="${k}">−</button>
@@ -1542,8 +1620,9 @@ function renderStatInvestmentRows(mon) {
 
 function renderSlotModal() {
   const mon = currentSlotMon();
+  const headerName = mon ? (slotDraft.nickname ? `${slotDraft.nickname} (${slotDraft.displayName || formatName(mon.name)})` : (slotDraft.displayName || formatName(mon.name))) : 'Add Pokémon';
   let html = `<button class="modal-close" id="slot-close-btn" type="button">✕</button>
-    <h2>${mon ? escapeHtml(slotDraft.displayName || formatName(mon.name)) : 'Add Pokémon'}</h2>`;
+    <h2>${escapeHtml(headerName)}</h2>`;
 
   html += slotFieldPickerHtml('pokemon', 'Pokémon', mon ? (slotDraft.displayName || formatName(mon.name)) : '', 'Search Pokémon…');
 
@@ -1558,6 +1637,18 @@ function renderSlotModal() {
         </button>
       </div>`;
     }
+
+    // Nickname (optional, cosmetic)
+    html += `<div class="slot-form-row"><label class="field-label">Nickname (optional)</label>
+      <input type="text" class="search-box" id="slot-nickname-input" placeholder="${escapeHtml(slotDraft.displayName || formatName(mon.name))}" value="${escapeHtml(slotDraft.nickname || '')}">
+    </div>`;
+
+    // Nature
+    html += `<div class="slot-form-row"><label class="field-label">Nature</label>
+      <select data-slot-select="nature">
+        ${Object.keys(NATURES).map(n => `<option value="${n}" ${slotDraft.nature === n ? 'selected' : ''}>${formatName(n)}${NATURES[n].plus ? ` (+${STAT_LABELS[NATURES[n].plus]}/−${STAT_LABELS[NATURES[n].minus]})` : ' (neutral)'}</option>`).join('')}
+      </select>
+    </div>`;
 
     // Ability
     html += slotFieldPickerHtml('ability', 'Ability', slotDraft.ability ? formatName(slotDraft.ability) : '', 'Search abilities…');
@@ -1594,6 +1685,12 @@ function renderSlotModal() {
 
   const megaToggleBtn = document.getElementById('mega-preview-toggle');
   if (megaToggleBtn) megaToggleBtn.addEventListener('click', () => { megaPreviewActive = !megaPreviewActive; renderSlotModal(); });
+
+  const nicknameInput = document.getElementById('slot-nickname-input');
+  if (nicknameInput) nicknameInput.addEventListener('input', () => { slotDraft.nickname = nicknameInput.value.trim() || null; });
+
+  const natureSelect = el.slotModal.querySelector('[data-slot-select="nature"]');
+  if (natureSelect) natureSelect.addEventListener('change', () => { slotDraft.nature = natureSelect.value; renderSlotModal(); });
 
   el.slotModal.querySelectorAll('[data-ev-stat]').forEach(input => {
     input.addEventListener('input', () => {
@@ -1749,17 +1846,247 @@ function removeSlot(index) {
   renderTeamSlotsGrid();
 }
 
+// ---------- Pokepaste import ----------
+const STAT_ABBR_MAP = {
+  hp: 'hp', atk: 'attack', attack: 'attack', def: 'defense', defense: 'defense',
+  spa: 'special-attack', 'sp.atk': 'special-attack', spatk: 'special-attack',
+  spd: 'special-defense', 'sp.def': 'special-defense', spdef: 'special-defense',
+  spe: 'speed', speed: 'speed',
+};
+
+function parseStatList(str) {
+  const out = {};
+  for (const part of str.split('/')) {
+    const trimmed = part.trim();
+    // Standard Pokepaste order is "252 HP"; this app's own "Champions stat points" comment
+    // uses "HP 2" instead — accept either.
+    let m = trimmed.match(/^(\d+)\s+([A-Za-z.]+)$/);
+    let num, label;
+    if (m) { num = m[1]; label = m[2]; }
+    else if ((m = trimmed.match(/^([A-Za-z.]+)\s+(\d+)$/))) { label = m[1]; num = m[2]; }
+    else continue;
+    const key = STAT_ABBR_MAP[label.toLowerCase()];
+    if (key) out[key] = Number(num);
+  }
+  return out;
+}
+
+// Splits a Pokepaste export into per-Pokémon text blocks (blank-line separated).
+function splitPokepasteBlocks(text) {
+  return text.split(/\r?\n\s*\r?\n/).map(b => b.trim()).filter(Boolean);
+}
+
+function parsePokepasteBlock(block) {
+  const lines = block.split(/\r?\n/).map(l => l.trim()).filter(l => l.length);
+  if (!lines.length) return null;
+  const result = {
+    nickname: null, speciesRaw: null, item: null, ability: null,
+    evs: null, ivs: null, nature: null, moves: [], teraType: null,
+    championsStatPoints: null,
+  };
+
+  const firstLine = lines[0];
+  let namePart = firstLine, itemPart = null;
+  const atIdx = firstLine.lastIndexOf(' @ ');
+  if (atIdx !== -1) {
+    namePart = firstLine.slice(0, atIdx).trim();
+    itemPart = firstLine.slice(atIdx + 3).trim();
+  }
+  result.speciesRaw = namePart;
+  result.item = itemPart;
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith('- ') || line.startsWith('– ')) {
+      result.moves.push(line.slice(2).trim());
+      continue;
+    }
+    if (line.startsWith('#')) {
+      const comment = line.slice(1).trim();
+      const spMatch = comment.match(/^Champions stat points:\s*(.+)$/i);
+      if (spMatch) { result.championsStatPoints = parseStatList(spMatch[1]); }
+      continue; // other comments (mega preview, mega ability) are informational-only, safely ignored
+    }
+    let m;
+    if ((m = line.match(/^Ability:\s*(.+)$/i))) { result.ability = m[1].trim(); continue; }
+    if ((m = line.match(/^Tera Type:\s*(.+)$/i))) { result.teraType = m[1].trim(); continue; }
+    if ((m = line.match(/^EVs:\s*(.+)$/i))) { result.evs = parseStatList(m[1]); continue; }
+    if ((m = line.match(/^IVs:\s*(.+)$/i))) { result.ivs = parseStatList(m[1]); continue; }
+    if ((m = line.match(/^([A-Za-z]+)\s+Nature$/i))) { result.nature = m[1].toLowerCase(); continue; }
+    // Level:, Shiny:, and anything else unrecognized are ignored gracefully.
+  }
+  return result;
+}
+
+// Resolves a Pokepaste "Nickname (Species)" / "Species (Form)" / "Species" header against a
+// game's actual roster, using the roster as ground truth to disambiguate the parens (which
+// standard Pokepaste overloads for both nicknames AND form/flavor qualifiers).
+function resolveSpeciesFromPokepaste(raw, pokemonList) {
+  const bySlug = new Map(pokemonList.map(p => [p.name, p]));
+  const byDisplay = new Map(pokemonList.map(p => [(p.displayNameOverride || formatName(p.name)).toLowerCase(), p]));
+
+  const tryMatch = (s) => {
+    const slug = slugify(s);
+    return bySlug.get(slug) || byDisplay.get(s.trim().toLowerCase()) || null;
+  };
+
+  const whole = tryMatch(raw);
+  if (whole) return { mon: whole, nickname: null };
+
+  const parenMatch = raw.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  if (parenMatch) {
+    const outer = parenMatch[1].trim();
+    const inner = parenMatch[2].trim();
+    const innerMon = tryMatch(inner);
+    if (innerMon) return { mon: innerMon, nickname: outer || null };
+    const outerMon = tryMatch(outer);
+    if (outerMon) return { mon: outerMon, nickname: null }; // parens were flavor/form text we can't map, e.g. "(Eternal)"
+  }
+  return null;
+}
+
+// Builds a team-builder slot object from one parsed Pokepaste block, resolved against a
+// specific game's roster. Returns { slot, warnings }; `slot` is null if the species couldn't
+// be resolved at all.
+function buildSlotFromParsedBlock(parsed, pokemonList, targetVg) {
+  const warnings = [];
+  const resolved = resolveSpeciesFromPokepaste(parsed.speciesRaw, pokemonList);
+  if (!resolved) {
+    return { slot: null, warnings: [`Couldn't find "${parsed.speciesRaw}" in this game's Pokédex — skipped.`] };
+  }
+  const mon = resolved.mon;
+  const isChampions = targetVg === CHAMPIONS_VG;
+
+  let ability = null;
+  if (parsed.ability) {
+    const slug = slugify(parsed.ability);
+    if (mon.abilities.some(a => a.name === slug)) ability = slug;
+    else { ability = slug; warnings.push(`${parsed.speciesRaw}: ability "${parsed.ability}" isn't in its known ability list — kept anyway.`); }
+  } else if (mon.abilities.length === 1) {
+    ability = mon.abilities[0].name;
+  }
+
+  const moves = [null, null, null, null];
+  parsed.moves.slice(0, 4).forEach((m, i) => { moves[i] = slugify(m); });
+  if (parsed.moves.length > 4) warnings.push(`${parsed.speciesRaw}: more than 4 moves listed — extra ones dropped.`);
+
+  const evSource = (isChampions && parsed.championsStatPoints) ? parsed.championsStatPoints : parsed.evs;
+  const evs = emptyEvs();
+  const caps = evCapsForGame(targetVg);
+  if (evSource) {
+    for (const k of STAT_KEYS) {
+      if (evSource[k] != null) evs[k] = Math.max(0, Math.min(caps.perStat, evSource[k]));
+    }
+  }
+  if (!isChampions && parsed.championsStatPoints) {
+    warnings.push(`${parsed.speciesRaw}: paste had Champions-scale stat points but the target game isn't Champions — ignored.`);
+  }
+
+  const ivs = isChampions ? null : emptyIvs();
+  if (ivs && parsed.ivs) {
+    for (const k of STAT_KEYS) {
+      if (parsed.ivs[k] != null) ivs[k] = Math.max(0, Math.min(31, parsed.ivs[k]));
+    }
+  }
+
+  const nature = (parsed.nature && NATURES[parsed.nature]) ? parsed.nature : DEFAULT_NATURE;
+  if (parsed.nature && !NATURES[parsed.nature]) warnings.push(`${parsed.speciesRaw}: unrecognized nature "${parsed.nature}" — defaulted to Hardy.`);
+
+  let item = null;
+  if (parsed.item) {
+    item = slugify(parsed.item);
+    const catalog = itemsForGame(targetVg);
+    if (!catalog.some(it => it.slug === item)) warnings.push(`${parsed.speciesRaw}: item "${parsed.item}" isn't in this game's item catalog — kept anyway.`);
+  }
+
+  const slot = {
+    pokemonName: mon.name,
+    pokemonId: mon.id,
+    spriteId: mon.spriteId || mon.id,
+    displayName: mon.displayNameOverride || formatName(mon.name),
+    nickname: resolved.nickname,
+    ability, moves, item, nature, evs, ivs,
+  };
+  return { slot, warnings };
+}
+
+async function parseAndReviewImport() {
+  const targetVg = getModeToggleVg(el.importModeToggle, el.importGameSelect);
+  const text = el.importTextarea.value;
+  const blocks = splitPokepasteBlocks(text);
+  if (!blocks.length) {
+    el.importPreview.textContent = 'Paste a team first.';
+    return;
+  }
+  el.importPreview.textContent = 'Loading Pokédex data…';
+  let pokemonList;
+  try {
+    pokemonList = await getTeamGamePokemon(targetVg);
+  } catch (err) {
+    el.importPreview.textContent = `Failed to load Pokédex data: ${err.message}`;
+    return;
+  }
+
+  const parsedBlocks = blocks.slice(0, 6).map(parsePokepasteBlock).filter(Boolean);
+  const allWarnings = [];
+  const slots = [null, null, null, null, null, null];
+  parsedBlocks.forEach((parsed, i) => {
+    const { slot, warnings } = buildSlotFromParsedBlock(parsed, pokemonList, targetVg);
+    slots[i] = slot;
+    allWarnings.push(...warnings);
+  });
+  if (blocks.length > 6) allWarnings.push(`Paste had ${blocks.length} Pokémon — only the first 6 were imported.`);
+
+  const resolvedCount = slots.filter(Boolean).length;
+  el.importPreview.innerHTML = `Resolved ${resolvedCount} of ${parsedBlocks.length} Pokémon.` +
+    (allWarnings.length ? `<br>${allWarnings.map(w => escapeHtml(w)).join('<br>')}` : '');
+
+  if (resolvedCount === 0) return;
+
+  currentEditingTeam = {
+    id: 'team-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    name: el.importTeamName.value.trim() || 'Imported Team',
+    game: targetVg,
+    slots,
+  };
+  closeImportModal();
+  openTeamEditor();
+}
+
+function openImportModal() {
+  el.importTeamName.value = '';
+  el.importTextarea.value = '';
+  el.importPreview.textContent = '';
+  setModeToggleState(el.importModeToggle, el.importGameSelect, DEFAULT_MAINLINE_GAME);
+  el.importBackdrop.classList.add('open');
+}
+
+function closeImportModal() {
+  el.importBackdrop.classList.remove('open');
+}
+
+function initImportModal() {
+  populateMainlineSelect(el.importGameSelect);
+  wireModeToggle(el.importModeToggle, el.importGameSelect, () => {});
+  el.importTeamBtn.addEventListener('click', openImportModal);
+  el.importCloseBtn.addEventListener('click', closeImportModal);
+  el.importCancelBtn.addEventListener('click', closeImportModal);
+  el.importParseBtn.addEventListener('click', parseAndReviewImport);
+  el.importBackdrop.addEventListener('click', (e) => { if (e.target === el.importBackdrop) closeImportModal(); });
+}
+
 function initTeamBuilder() {
   loadTeams();
   populateTeamGameSelect();
 
-  document.querySelectorAll('.view-nav-btn').forEach(btn => {
+  document.querySelectorAll('#main-view-nav .view-nav-btn').forEach(btn => {
     btn.addEventListener('click', () => switchView(btn.dataset.view));
   });
   el.newTeamBtn.addEventListener('click', createNewTeam);
   el.backToTeamList.addEventListener('click', () => closeTeamEditor(true));
   el.saveTeamBtn.addEventListener('click', saveCurrentTeam);
-  el.teamGameSelect.addEventListener('change', onTeamGameChange);
+  el.teamGameSelect.addEventListener('change', () => applyTeamGameChange(el.teamGameSelect.value));
+  wireModeToggle(el.teamModeToggle, el.teamGameSelect, applyTeamGameChange);
 
   el.teamList.addEventListener('click', (e) => {
     const actionBtn = e.target.closest('[data-action]');
@@ -1793,20 +2120,17 @@ function initTeamBuilder() {
 
 // ---------- Boot ----------
 function init() {
-  for (const g of GAMES) {
-    const opt = document.createElement('option');
-    opt.value = g.vg;
-    opt.textContent = (g.vg === NATIONAL_DEX_VG || g.vg === CHAMPIONS_VG) ? g.label : `Gen ${g.gen} — ${g.label}`;
-    el.gameSelect.appendChild(opt);
-  }
-  el.gameSelect.value = 'scarlet-violet';
+  populateMainlineSelect(el.gameSelect);
+  el.gameSelect.value = DEFAULT_MAINLINE_GAME;
   el.gameSelect.addEventListener('change', () => selectGame(el.gameSelect.value));
+  wireModeToggle(el.searchModeToggle, el.gameSelect, selectGame);
 
   renderTypeGroups();
   initStatFilterGrid();
   initMethodChecks();
   initSimpleListeners();
   initTeamBuilder();
+  initImportModal();
 
   selectGame(el.gameSelect.value);
 }

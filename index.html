@@ -9,13 +9,17 @@
 <body>
 <header class="topbar">
   <h1>Pokémon Competitive Search</h1>
-  <nav class="view-nav">
+  <nav class="view-nav" id="main-view-nav">
     <button type="button" class="view-nav-btn active" data-view="search">Search</button>
     <button type="button" class="view-nav-btn" data-view="teams">Team Builder</button>
   </nav>
   <div class="topbar-right" id="search-topbar-right">
     <div class="game-select-wrap">
-      <label for="game-select">Game</label>
+      <label>Game</label>
+      <nav class="mode-toggle" id="search-mode-toggle">
+        <button type="button" class="view-nav-btn" data-mode="champions">Champions</button>
+        <button type="button" class="view-nav-btn active" data-mode="mainline">Mainline</button>
+      </nav>
       <select id="game-select"></select>
       <span id="load-status" class="load-status"></span>
     </div>
@@ -113,7 +117,10 @@
   <div class="team-list-panel" id="team-list-panel">
     <div class="teams-toolbar">
       <h2>My Teams</h2>
-      <button id="new-team-btn" class="reset-btn" type="button">+ New Team</button>
+      <div style="display:flex; gap:8px;">
+        <button id="import-team-btn" class="reset-btn" type="button">Import from Pokepaste</button>
+        <button id="new-team-btn" class="reset-btn" type="button">+ New Team</button>
+      </div>
     </div>
     <div class="hint" id="teams-empty-hint">No teams yet — click "+ New Team" to build one.</div>
     <div class="team-list" id="team-list"></div>
@@ -124,7 +131,11 @@
       <button id="back-to-team-list" type="button" class="reset-btn">&larr; Back to Teams</button>
       <input type="text" id="team-name-input" placeholder="Team name" class="search-box">
       <div class="game-select-wrap">
-        <label for="team-game-select">Game</label>
+        <label>Game</label>
+        <nav class="mode-toggle" id="team-mode-toggle">
+          <button type="button" class="view-nav-btn" data-mode="champions">Champions</button>
+          <button type="button" class="view-nav-btn active" data-mode="mainline">Mainline</button>
+        </nav>
         <select id="team-game-select"></select>
       </div>
       <button id="save-team-btn" class="reset-btn" type="button">Save Team</button>
@@ -140,6 +151,36 @@
 
 <div class="modal-backdrop" id="slot-backdrop">
   <div class="modal slot-modal" id="slot-modal"></div>
+</div>
+
+<div class="modal-backdrop" id="import-backdrop">
+  <div class="modal slot-modal" id="import-modal">
+    <button class="modal-close" id="import-close-btn" type="button">✕</button>
+    <h2>Import Team from Pokepaste</h2>
+    <div class="slot-form-row">
+      <label class="field-label">Game</label>
+      <div class="game-select-wrap">
+        <nav class="mode-toggle" id="import-mode-toggle">
+          <button type="button" class="view-nav-btn" data-mode="champions">Champions</button>
+          <button type="button" class="view-nav-btn active" data-mode="mainline">Mainline</button>
+        </nav>
+        <select id="import-game-select"></select>
+      </div>
+    </div>
+    <div class="slot-form-row">
+      <label class="field-label">Team name</label>
+      <input type="text" id="import-team-name" class="search-box" placeholder="Imported Team">
+    </div>
+    <div class="slot-form-row">
+      <label class="field-label">Pokepaste text</label>
+      <textarea id="import-textarea" class="import-textarea" placeholder="Paste your team here…"></textarea>
+    </div>
+    <div id="import-preview" class="hint"></div>
+    <div class="slot-form-row" style="display:flex; gap:8px; margin-top:12px;">
+      <button type="button" class="reset-btn" id="import-parse-btn">Parse &amp; Review</button>
+      <button type="button" class="reset-btn" id="import-cancel-btn">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <script src="champions-usage.data.js"></script>

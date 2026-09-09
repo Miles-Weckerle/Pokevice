@@ -708,6 +708,33 @@ tbody tr:hover {
 
 .view-nav-btn:hover { color: var(--text); }
 
+.mode-toggle {
+  display: flex;
+  gap: 4px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px;
+}
+
+.mode-toggle .view-nav-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.import-textarea {
+  width: 100%;
+  min-height: 220px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius);
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
 .view-nav-btn.active {
   background: var(--accent-dim);
   color: var(--text);
@@ -941,6 +968,9 @@ tbody tr:hover {
   font-weight: 600;
   color: var(--text);
 }
+
+.nature-plus { color: #7ac74c; margin-left: 2px; }
+.nature-minus { color: #ff6b7a; margin-left: 2px; }
 
 .stat-invest-base {
   width: 62px;
