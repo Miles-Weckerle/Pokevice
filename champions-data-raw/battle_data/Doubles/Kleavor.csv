@@ -1,0 +1,56 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Kleavor,98,move,1,Stone Axe,96.3%,,,,,,,,
+Kleavor,98,move,2,X-Scissor,72.5%,,,,,,,,
+Kleavor,98,move,3,Close Combat,47.5%,,,,,,,,
+Kleavor,98,move,4,Protect,42.4%,,,,,,,,
+Kleavor,98,move,5,Night Slash,32.2%,,,,,,,,
+Kleavor,98,move,6,U-turn,26.6%,,,,,,,,
+Kleavor,98,move,7,Tailwind,20.7%,,,,,,,,
+Kleavor,98,move,8,Rock Slide,14.9%,,,,,,,,
+Kleavor,98,move,9,Aerial Ace,10.7%,,,,,,,,
+Kleavor,98,move,10,Feint,10.5%,,,,,,,,
+Kleavor,98,held_item,1,Choice Scarf,36.4%,,,,,,,,
+Kleavor,98,held_item,2,Focus Sash,30.0%,,,,,,,,
+Kleavor,98,held_item,3,Life Orb,10.0%,,,,,,,,
+Kleavor,98,held_item,4,White Herb,4.8%,,,,,,,,
+Kleavor,98,held_item,5,Sitrus Berry,2.8%,,,,,,,,
+Kleavor,98,held_item,6,Wide Lens,2.5%,,,,,,,,
+Kleavor,98,held_item,7,Quick Claw,2.4%,,,,,,,,
+Kleavor,98,held_item,8,Expert Belt,1.9%,,,,,,,,
+Kleavor,98,held_item,9,Hard Stone,1.5%,,,,,,,,
+Kleavor,98,held_item,10,Silver Powder,1.2%,,,,,,,,
+Kleavor,98,teammate,1,Whimsicott,,,,,,,,,
+Kleavor,98,teammate,2,Basculegion Male,,,,,,,,,
+Kleavor,98,teammate,3,Sneasler,,,,,,,,,
+Kleavor,98,teammate,4,Garchomp,,,,,,,,,
+Kleavor,98,teammate,5,Kingambit,,,,,,,,,
+Kleavor,98,teammate,6,Charizard,,,,,,,,,
+Kleavor,98,teammate,7,Sinistcha,,,,,,,,,
+Kleavor,98,teammate,8,Raichu,,,,,,,,,
+Kleavor,98,teammate,9,Metagross,,,,,,,,,
+Kleavor,98,teammate,10,Froslass,,,,,,,,,
+Kleavor,98,stat_alignment,1,Jolly,47.0%,Speed,Sp. Atk,,,,,,
+Kleavor,98,stat_alignment,2,Adamant,45.4%,Attack,Sp. Atk,,,,,,
+Kleavor,98,stat_alignment,3,Brave,2.6%,Attack,Speed,,,,,,
+Kleavor,98,stat_alignment,4,Naive,1.1%,Speed,Sp. Def,,,,,,
+Kleavor,98,stat_alignment,5,Careful,1.1%,Sp. Def,Sp. Atk,,,,,,
+Kleavor,98,stat_alignment,6,Naughty,0.9%,Attack,Sp. Def,,,,,,
+Kleavor,98,stat_alignment,7,Impish,0.5%,Defense,Sp. Atk,,,,,,
+Kleavor,98,stat_alignment,8,Lonely,0.5%,Attack,Defense,,,,,,
+Kleavor,98,stat_alignment,9,Hasty,0.3%,Speed,Defense,,,,,,
+Kleavor,98,stat_alignment,10,Gentle,0.2%,Sp. Def,Defense,,,,,,
+Kleavor,98,stat_points,1,,48.4%,,,2,32,0,0,0,32
+Kleavor,98,stat_points,2,,9.9%,,,0,32,0,0,2,32
+Kleavor,98,stat_points,3,,9.4%,,,0,32,2,0,0,32
+Kleavor,98,stat_points,4,,3.2%,,,0,32,0,0,0,32
+Kleavor,98,stat_points,5,,2.4%,,,32,32,0,0,2,0
+Kleavor,98,stat_points,6,,2.0%,,,32,32,2,0,0,0
+Kleavor,98,stat_points,7,,1.6%,,,32,32,0,0,0,2
+Kleavor,98,stat_points,8,,1.0%,,,2,32,0,0,32,0
+Kleavor,98,stat_points,9,,0.9%,,,8,32,0,0,0,26
+Kleavor,98,stat_points,10,,0.7%,,,15,16,16,0,12,7
+Kleavor,98,stat_points,11,,0.6%,,,2,32,32,0,0,0
+Kleavor,98,stat_points,12,,0.5%,,,0,32,0,0,32,2
+Kleavor,98,ability,1,Sharpness,95.1%,,,,,,,,
+Kleavor,98,ability,2,Sheer Force,4.4%,,,,,,,,
+Kleavor,98,ability,3,Swarm,0.5%,,,,,,,,

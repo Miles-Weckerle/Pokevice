@@ -1,0 +1,56 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Pangoro,199,move,1,Bullet Punch,74.1%,,,,,,,,
+Pangoro,199,move,2,Darkest Lariat,51.6%,,,,,,,,
+Pangoro,199,move,3,Close Combat,47.7%,,,,,,,,
+Pangoro,199,move,4,Ice Punch,37.2%,,,,,,,,
+Pangoro,199,move,5,Drain Punch,34.6%,,,,,,,,
+Pangoro,199,move,6,Comeuppance,28.4%,,,,,,,,
+Pangoro,199,move,7,Gunk Shot,19.2%,,,,,,,,
+Pangoro,199,move,8,Headlong Rush,14.3%,,,,,,,,
+Pangoro,199,move,9,Thunder Punch,12.8%,,,,,,,,
+Pangoro,199,move,10,Knock Off,9.8%,,,,,,,,
+Pangoro,199,held_item,1,Focus Sash,40.7%,,,,,,,,
+Pangoro,199,held_item,2,Life Orb,18.8%,,,,,,,,
+Pangoro,199,held_item,3,Sitrus Berry,6.7%,,,,,,,,
+Pangoro,199,held_item,4,Quick Claw,5.1%,,,,,,,,
+Pangoro,199,held_item,5,Expert Belt,4.1%,,,,,,,,
+Pangoro,199,held_item,6,Black Glasses,3.7%,,,,,,,,
+Pangoro,199,held_item,7,Lum Berry,3.2%,,,,,,,,
+Pangoro,199,held_item,8,Choice Scarf,2.9%,,,,,,,,
+Pangoro,199,held_item,9,Roseli Berry,2.5%,,,,,,,,
+Pangoro,199,held_item,10,Chople Berry,2.4%,,,,,,,,
+Pangoro,199,teammate,1,Meowscarada,,,,,,,,,
+Pangoro,199,teammate,2,Charizard,,,,,,,,,
+Pangoro,199,teammate,3,Greninja,,,,,,,,,
+Pangoro,199,teammate,4,Basculegion Male,,,,,,,,,
+Pangoro,199,teammate,5,Sableye,,,,,,,,,
+Pangoro,199,teammate,6,Staraptor,,,,,,,,,
+Pangoro,199,teammate,7,Kleavor,,,,,,,,,
+Pangoro,199,teammate,8,Excadrill,,,,,,,,,
+Pangoro,199,teammate,9,Ampharos,,,,,,,,,
+Pangoro,199,teammate,10,Grimmsnarl,,,,,,,,,
+Pangoro,199,stat_alignment,1,Adamant,57.2%,Attack,Sp. Atk,,,,,,
+Pangoro,199,stat_alignment,2,Jolly,17.4%,Speed,Sp. Atk,,,,,,
+Pangoro,199,stat_alignment,3,Brave,13.2%,Attack,Speed,,,,,,
+Pangoro,199,stat_alignment,4,Relaxed,3.4%,Defense,Speed,,,,,,
+Pangoro,199,stat_alignment,5,Careful,2.4%,Sp. Def,Sp. Atk,,,,,,
+Pangoro,199,stat_alignment,6,Impish,2.4%,Defense,Sp. Atk,,,,,,
+Pangoro,199,stat_alignment,7,Lonely,1.5%,Attack,Defense,,,,,,
+Pangoro,199,stat_alignment,8,Naughty,1.5%,Attack,Sp. Def,,,,,,
+Pangoro,199,stat_alignment,9,Sassy,0.6%,Sp. Def,Speed,,,,,,
+Pangoro,199,stat_alignment,10,Serious,0.0%,,,,,,,,
+Pangoro,199,stat_points,1,,23.5%,,,2,32,0,0,0,32
+Pangoro,199,stat_points,2,,18.5%,,,32,32,2,0,0,0
+Pangoro,199,stat_points,3,,5.9%,,,0,32,2,0,0,32
+Pangoro,199,stat_points,4,,5.9%,,,1,32,1,0,0,32
+Pangoro,199,stat_points,5,,4.2%,,,2,32,32,0,0,0
+Pangoro,199,stat_points,6,,4.0%,,,32,32,0,0,2,0
+Pangoro,199,stat_points,7,,3.2%,,,32,32,0,0,0,2
+Pangoro,199,stat_points,8,,3.1%,,,1,32,0,0,1,32
+Pangoro,199,stat_points,9,,2.1%,,,0,32,32,0,2,0
+Pangoro,199,stat_points,10,,1.7%,,,31,32,3,0,0,0
+Pangoro,199,stat_points,11,,1.5%,,,32,32,0,0,0,0
+Pangoro,199,stat_points,12,,1.5%,,,32,32,1,0,1,0
+Pangoro,199,ability,1,Scrappy,51.6%,,,,,,,,
+Pangoro,199,ability,2,Iron Fist,29.5%,,,,,,,,
+Pangoro,199,ability,3,Mold Breaker,19.0%,,,,,,,,

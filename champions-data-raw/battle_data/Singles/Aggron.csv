@@ -1,0 +1,56 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Aggron,107,move,1,Body Press,74.5%,,,,,,,,
+Aggron,107,move,2,Iron Defense,58.6%,,,,,,,,
+Aggron,107,move,3,Heavy Slam,57.2%,,,,,,,,
+Aggron,107,move,4,Metal Burst,35.3%,,,,,,,,
+Aggron,107,move,5,Earthquake,28.9%,,,,,,,,
+Aggron,107,move,6,Stealth Rock,24.5%,,,,,,,,
+Aggron,107,move,7,Iron Head,17.5%,,,,,,,,
+Aggron,107,move,8,Stone Edge,12.2%,,,,,,,,
+Aggron,107,move,9,Roar,11.4%,,,,,,,,
+Aggron,107,move,10,Crunch,8.6%,,,,,,,,
+Aggron,107,held_item,1,Aggronite,75.8%,,,,,,,,
+Aggron,107,held_item,2,Leftovers,5.8%,,,,,,,,
+Aggron,107,held_item,3,Quick Claw,4.0%,,,,,,,,
+Aggron,107,held_item,4,Sitrus Berry,3.9%,,,,,,,,
+Aggron,107,held_item,5,Lum Berry,1.8%,,,,,,,,
+Aggron,107,held_item,6,Focus Band,1.0%,,,,,,,,
+Aggron,107,held_item,7,Mental Herb,0.8%,,,,,,,,
+Aggron,107,held_item,8,Chople Berry,0.7%,,,,,,,,
+Aggron,107,held_item,9,Light Ball,0.6%,,,,,,,,
+Aggron,107,held_item,10,Focus Sash,0.6%,,,,,,,,
+Aggron,107,teammate,1,Garchomp,,,,,,,,,
+Aggron,107,teammate,2,Meowscarada,,,,,,,,,
+Aggron,107,teammate,3,Raichu,,,,,,,,,
+Aggron,107,teammate,4,Mimikyu,,,,,,,,,
+Aggron,107,teammate,5,Basculegion Male,,,,,,,,,
+Aggron,107,teammate,6,Staraptor,,,,,,,,,
+Aggron,107,teammate,7,Dragonite,,,,,,,,,
+Aggron,107,teammate,8,Charizard,,,,,,,,,
+Aggron,107,teammate,9,Archaludon,,,,,,,,,
+Aggron,107,teammate,10,Sylveon,,,,,,,,,
+Aggron,107,stat_alignment,1,Impish,48.9%,Defense,Sp. Atk,,,,,,
+Aggron,107,stat_alignment,2,Adamant,18.8%,Attack,Sp. Atk,,,,,,
+Aggron,107,stat_alignment,3,Careful,13.9%,Sp. Def,Sp. Atk,,,,,,
+Aggron,107,stat_alignment,4,Relaxed,7.1%,Defense,Speed,,,,,,
+Aggron,107,stat_alignment,5,Brave,4.3%,Attack,Speed,,,,,,
+Aggron,107,stat_alignment,6,Jolly,2.4%,Speed,Sp. Atk,,,,,,
+Aggron,107,stat_alignment,7,Sassy,2.3%,Sp. Def,Speed,,,,,,
+Aggron,107,stat_alignment,8,Bold,0.6%,Defense,Attack,,,,,,
+Aggron,107,stat_alignment,9,Lax,0.5%,Defense,Sp. Def,,,,,,
+Aggron,107,stat_alignment,10,Naughty,0.4%,Attack,Sp. Def,,,,,,
+Aggron,107,stat_points,1,,17.6%,,,32,0,2,0,32,0
+Aggron,107,stat_points,2,,12.4%,,,32,0,32,0,2,0
+Aggron,107,stat_points,3,,10.4%,,,32,0,10,0,24,0
+Aggron,107,stat_points,4,,8.2%,,,32,32,0,0,0,2
+Aggron,107,stat_points,5,,5.3%,,,32,2,32,0,0,0
+Aggron,107,stat_points,6,,3.7%,,,32,32,2,0,0,0
+Aggron,107,stat_points,7,,3.6%,,,32,2,0,0,32,0
+Aggron,107,stat_points,8,,3.1%,,,32,0,32,0,0,2
+Aggron,107,stat_points,9,,2.5%,,,32,32,0,0,2,0
+Aggron,107,stat_points,10,,2.3%,,,2,32,32,0,0,0
+Aggron,107,stat_points,11,,2.0%,,,32,0,32,0,0,0
+Aggron,107,stat_points,12,,1.8%,,,32,0,0,0,32,2
+Aggron,107,ability,1,Sturdy,82.3%,,,,,,,,
+Aggron,107,ability,2,Heavy Metal,12.5%,,,,,,,,
+Aggron,107,ability,3,Rock Head,5.2%,,,,,,,,

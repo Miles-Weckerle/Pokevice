@@ -1,0 +1,56 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Liepard,204,move,1,Foul Play,64.6%,,,,,,,,
+Liepard,204,move,2,Encore,64.3%,,,,,,,,
+Liepard,204,move,3,Copycat,50.7%,,,,,,,,
+Liepard,204,move,4,Protect,28.7%,,,,,,,,
+Liepard,204,move,5,Substitute,24.7%,,,,,,,,
+Liepard,204,move,6,Taunt,17.6%,,,,,,,,
+Liepard,204,move,7,Yawn,16.5%,,,,,,,,
+Liepard,204,move,8,Baton Pass,15.8%,,,,,,,,
+Liepard,204,move,9,Double Team,15.2%,,,,,,,,
+Liepard,204,move,10,Fake Out,11.8%,,,,,,,,
+Liepard,204,held_item,1,Focus Sash,30.7%,,,,,,,,
+Liepard,204,held_item,2,Sitrus Berry,26.0%,,,,,,,,
+Liepard,204,held_item,3,Leftovers,10.5%,,,,,,,,
+Liepard,204,held_item,4,Bright Powder,9.8%,,,,,,,,
+Liepard,204,held_item,5,Black Glasses,5.8%,,,,,,,,
+Liepard,204,held_item,6,Iron Ball,3.1%,,,,,,,,
+Liepard,204,held_item,7,Choice Scarf,3.1%,,,,,,,,
+Liepard,204,held_item,8,Mental Herb,2.0%,,,,,,,,
+Liepard,204,held_item,9,Chople Berry,1.6%,,,,,,,,
+Liepard,204,held_item,10,Damp Rock,1.5%,,,,,,,,
+Liepard,204,teammate,1,Raichu,,,,,,,,,
+Liepard,204,teammate,2,Garchomp,,,,,,,,,
+Liepard,204,teammate,3,Staraptor,,,,,,,,,
+Liepard,204,teammate,4,Archaludon,,,,,,,,,
+Liepard,204,teammate,5,Mimikyu,,,,,,,,,
+Liepard,204,teammate,6,Meowscarada,,,,,,,,,
+Liepard,204,teammate,7,Alolan Ninetales,,,,,,,,,
+Liepard,204,teammate,8,Basculegion Male,,,,,,,,,
+Liepard,204,teammate,9,Blaziken,,,,,,,,,
+Liepard,204,teammate,10,Metagross,,,,,,,,,
+Liepard,204,stat_alignment,1,Impish,23.9%,Defense,Sp. Atk,,,,,,
+Liepard,204,stat_alignment,2,Bold,23.6%,Defense,Attack,,,,,,
+Liepard,204,stat_alignment,3,Jolly,15.5%,Speed,Sp. Atk,,,,,,
+Liepard,204,stat_alignment,4,Relaxed,13.1%,Defense,Speed,,,,,,
+Liepard,204,stat_alignment,5,Naughty,5.0%,Attack,Sp. Def,,,,,,
+Liepard,204,stat_alignment,6,Adamant,3.7%,Attack,Sp. Atk,,,,,,
+Liepard,204,stat_alignment,7,Careful,3.3%,Sp. Def,Sp. Atk,,,,,,
+Liepard,204,stat_alignment,8,Timid,2.9%,Speed,Attack,,,,,,
+Liepard,204,stat_alignment,9,Naive,2.0%,Speed,Sp. Def,,,,,,
+Liepard,204,stat_alignment,10,Brave,1.9%,Attack,Speed,,,,,,
+Liepard,204,stat_points,1,,38.4%,,,32,0,32,0,2,0
+Liepard,204,stat_points,2,,12.0%,,,2,32,0,0,0,32
+Liepard,204,stat_points,3,,5.0%,,,32,0,32,0,0,2
+Liepard,204,stat_points,4,,2.9%,,,32,0,13,0,21,0
+Liepard,204,stat_points,5,,2.7%,,,32,0,2,0,0,32
+Liepard,204,stat_points,6,,2.4%,,,32,0,30,0,4,0
+Liepard,204,stat_points,7,,1.9%,,,2,0,32,0,32,0
+Liepard,204,stat_points,8,,1.9%,,,0,32,0,0,0,32
+Liepard,204,stat_points,9,,1.8%,,,2,0,0,32,0,32
+Liepard,204,stat_points,10,,1.6%,,,32,0,1,0,1,32
+Liepard,204,stat_points,11,,1.6%,,,22,0,12,0,0,32
+Liepard,204,stat_points,12,,1.5%,,,0,32,0,32,0,2
+Liepard,204,ability,1,Prankster,93.9%,,,,,,,,
+Liepard,204,ability,2,Unburden,5.6%,,,,,,,,
+Liepard,204,ability,3,Limber,0.4%,,,,,,,,

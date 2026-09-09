@@ -1,0 +1,56 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Qwilfish,207,move,1,Flip Turn,49.8%,,,,,,,,
+Qwilfish,207,move,2,Barb Barrage,43.9%,,,,,,,,
+Qwilfish,207,move,3,Destiny Bond,40.0%,,,,,,,,
+Qwilfish,207,move,4,Toxic Spikes,32.0%,,,,,,,,
+Qwilfish,207,move,5,Toxic,23.8%,,,,,,,,
+Qwilfish,207,move,6,Taunt,19.0%,,,,,,,,
+Qwilfish,207,move,7,Spikes,17.9%,,,,,,,,
+Qwilfish,207,move,8,Thunder Wave,17.0%,,,,,,,,
+Qwilfish,207,move,9,Liquidation,15.7%,,,,,,,,
+Qwilfish,207,move,10,Pain Split,14.8%,,,,,,,,
+Qwilfish,207,held_item,1,Leftovers,26.1%,,,,,,,,
+Qwilfish,207,held_item,2,Sitrus Berry,21.0%,,,,,,,,
+Qwilfish,207,held_item,3,Focus Sash,18.3%,,,,,,,,
+Qwilfish,207,held_item,4,Poison Barb,10.2%,,,,,,,,
+Qwilfish,207,held_item,5,Life Orb,6.6%,,,,,,,,
+Qwilfish,207,held_item,6,Bright Powder,2.7%,,,,,,,,
+Qwilfish,207,held_item,7,Shuca Berry,2.2%,,,,,,,,
+Qwilfish,207,held_item,8,Choice Scarf,2.1%,,,,,,,,
+Qwilfish,207,held_item,9,Mystic Water,1.7%,,,,,,,,
+Qwilfish,207,held_item,10,Mental Herb,1.5%,,,,,,,,
+Qwilfish,207,teammate,1,Garchomp,,,,,,,,,
+Qwilfish,207,teammate,2,Basculegion Male,,,,,,,,,
+Qwilfish,207,teammate,3,Kingambit,,,,,,,,,
+Qwilfish,207,teammate,4,Swampert,,,,,,,,,
+Qwilfish,207,teammate,5,Bellibolt,,,,,,,,,
+Qwilfish,207,teammate,6,Staraptor,,,,,,,,,
+Qwilfish,207,teammate,7,Lopunny,,,,,,,,,
+Qwilfish,207,teammate,8,Serperior,,,,,,,,,
+Qwilfish,207,teammate,9,Dragonite,,,,,,,,,
+Qwilfish,207,teammate,10,Archaludon,,,,,,,,,
+Qwilfish,207,stat_alignment,1,Impish,40.4%,Defense,Sp. Atk,,,,,,
+Qwilfish,207,stat_alignment,2,Adamant,22.7%,Attack,Sp. Atk,,,,,,
+Qwilfish,207,stat_alignment,3,Jolly,20.6%,Speed,Sp. Atk,,,,,,
+Qwilfish,207,stat_alignment,4,Relaxed,4.5%,Defense,Speed,,,,,,
+Qwilfish,207,stat_alignment,5,Careful,4.5%,Sp. Def,Sp. Atk,,,,,,
+Qwilfish,207,stat_alignment,6,Bold,2.4%,Defense,Attack,,,,,,
+Qwilfish,207,stat_alignment,7,Sassy,1.7%,Sp. Def,Speed,,,,,,
+Qwilfish,207,stat_alignment,8,Lonely,0.8%,Attack,Defense,,,,,,
+Qwilfish,207,stat_alignment,9,Timid,0.8%,Speed,Attack,,,,,,
+Qwilfish,207,stat_alignment,10,Naughty,0.6%,Attack,Sp. Def,,,,,,
+Qwilfish,207,stat_points,1,,18.1%,,,32,0,32,0,2,0
+Qwilfish,207,stat_points,2,,9.7%,,,32,32,2,0,0,0
+Qwilfish,207,stat_points,3,,8.6%,,,2,32,0,0,0,32
+Qwilfish,207,stat_points,4,,7.9%,,,32,0,32,0,0,2
+Qwilfish,207,stat_points,5,,4.4%,,,32,0,32,0,0,0
+Qwilfish,207,stat_points,6,,3.8%,,,1,32,1,0,0,32
+Qwilfish,207,stat_points,7,,3.2%,,,0,32,0,0,2,32
+Qwilfish,207,stat_points,8,,2.6%,,,32,0,9,0,25,0
+Qwilfish,207,stat_points,9,,2.6%,,,31,0,32,0,3,0
+Qwilfish,207,stat_points,10,,2.6%,,,0,32,2,0,0,32
+Qwilfish,207,stat_points,11,,2.0%,,,32,0,2,0,0,32
+Qwilfish,207,stat_points,12,,1.7%,,,2,0,32,0,32,0
+Qwilfish,207,ability,1,Intimidate,68.8%,,,,,,,,
+Qwilfish,207,ability,2,Swift Swim,18.4%,,,,,,,,
+Qwilfish,207,ability,3,Poison Point,12.8%,,,,,,,,

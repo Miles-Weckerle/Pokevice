@@ -1,0 +1,55 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Whimsicott,47,move,1,Moonblast,86.0%,,,,,,,,
+Whimsicott,47,move,2,Encore,59.7%,,,,,,,,
+Whimsicott,47,move,3,Tailwind,50.9%,,,,,,,,
+Whimsicott,47,move,4,Leech Seed,43.2%,,,,,,,,
+Whimsicott,47,move,5,Memento,33.4%,,,,,,,,
+Whimsicott,47,move,6,Substitute,24.8%,,,,,,,,
+Whimsicott,47,move,7,Endeavor,17.6%,,,,,,,,
+Whimsicott,47,move,8,Giga Drain,15.2%,,,,,,,,
+Whimsicott,47,move,9,Taunt,12.9%,,,,,,,,
+Whimsicott,47,move,10,Cotton Guard,11.0%,,,,,,,,
+Whimsicott,47,held_item,1,Focus Sash,51.0%,,,,,,,,
+Whimsicott,47,held_item,2,Leftovers,28.3%,,,,,,,,
+Whimsicott,47,held_item,3,Sitrus Berry,4.5%,,,,,,,,
+Whimsicott,47,held_item,4,Bright Powder,1.9%,,,,,,,,
+Whimsicott,47,held_item,5,Big Root,1.7%,,,,,,,,
+Whimsicott,47,held_item,6,Mental Herb,1.5%,,,,,,,,
+Whimsicott,47,held_item,7,Light Clay,1.5%,,,,,,,,
+Whimsicott,47,held_item,8,Fairy Feather,1.4%,,,,,,,,
+Whimsicott,47,held_item,9,Lum Berry,1.3%,,,,,,,,
+Whimsicott,47,held_item,10,Life Orb,1.1%,,,,,,,,
+Whimsicott,47,teammate,1,Garchomp,,,,,,,,,
+Whimsicott,47,teammate,2,Raichu,,,,,,,,,
+Whimsicott,47,teammate,3,Charizard,,,,,,,,,
+Whimsicott,47,teammate,4,Archaludon,,,,,,,,,
+Whimsicott,47,teammate,5,Basculegion Male,,,,,,,,,
+Whimsicott,47,teammate,6,Staraptor,,,,,,,,,
+Whimsicott,47,teammate,7,Corviknight,,,,,,,,,
+Whimsicott,47,teammate,8,Mimikyu,,,,,,,,,
+Whimsicott,47,teammate,9,Metagross,,,,,,,,,
+Whimsicott,47,teammate,10,Meowscarada,,,,,,,,,
+Whimsicott,47,stat_alignment,1,Timid,46.4%,Speed,Attack,,,,,,
+Whimsicott,47,stat_alignment,2,Bold,25.4%,Defense,Attack,,,,,,
+Whimsicott,47,stat_alignment,3,Modest,19.3%,Sp. Atk,Attack,,,,,,
+Whimsicott,47,stat_alignment,4,Calm,6.3%,Sp. Def,Attack,,,,,,
+Whimsicott,47,stat_alignment,5,Quiet,0.5%,Sp. Atk,Speed,,,,,,
+Whimsicott,47,stat_alignment,6,Relaxed,0.4%,Defense,Speed,,,,,,
+Whimsicott,47,stat_alignment,7,Impish,0.4%,Defense,Sp. Atk,,,,,,
+Whimsicott,47,stat_alignment,8,Mild,0.3%,Sp. Atk,Defense,,,,,,
+Whimsicott,47,stat_alignment,9,Hasty,0.2%,Speed,Defense,,,,,,
+Whimsicott,47,stat_alignment,10,Sassy,0.2%,Sp. Def,Speed,,,,,,
+Whimsicott,47,stat_points,1,,43.4%,,,2,0,0,32,0,32
+Whimsicott,47,stat_points,2,,11.1%,,,32,0,32,0,2,0
+Whimsicott,47,stat_points,3,,3.4%,,,32,0,32,0,0,2
+Whimsicott,47,stat_points,4,,2.6%,,,0,0,0,32,2,32
+Whimsicott,47,stat_points,5,,2.5%,,,0,0,2,32,0,32
+Whimsicott,47,stat_points,6,,2.4%,,,32,0,32,2,0,0
+Whimsicott,47,stat_points,7,,1.8%,,,32,0,2,0,32,0
+Whimsicott,47,stat_points,8,,1.5%,,,0,0,0,32,0,32
+Whimsicott,47,stat_points,9,,1.3%,,,32,0,32,0,0,0
+Whimsicott,47,stat_points,10,,1.1%,,,2,0,32,0,32,0
+Whimsicott,47,stat_points,11,,1.1%,,,32,0,0,32,0,2
+Whimsicott,47,ability,1,Prankster,98.0%,,,,,,,,
+Whimsicott,47,ability,2,Infiltrator,1.1%,,,,,,,,
+Whimsicott,47,ability,3,Chlorophyll,0.9%,,,,,,,,

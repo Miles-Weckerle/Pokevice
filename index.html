@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pokémon Competitive Search</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>Pokémon Competitive Search</h1>
+  <nav class="view-nav">
+    <button type="button" class="view-nav-btn active" data-view="search">Search</button>
+    <button type="button" class="view-nav-btn" data-view="teams">Team Builder</button>
+  </nav>
+  <div class="topbar-right" id="search-topbar-right">
+    <div class="game-select-wrap">
+      <label for="game-select">Game</label>
+      <select id="game-select"></select>
+      <span id="load-status" class="load-status"></span>
+    </div>
+    <label class="checkbox-row final-evo-top">
+      <input type="checkbox" id="filter-final-evo" checked>
+      Final evolution only
+    </label>
+  </div>
+</header>
+
+<div class="layout" id="search-view">
+  <aside class="filters" id="filters-panel">
+    <div class="filter-group">
+      <h2>Search</h2>
+      <input type="text" id="name-search" placeholder="Search Pokémon by name…" class="search-box">
+    </div>
+
+    <details class="filter-dropdown">
+      <summary>Type</summary>
+      <div class="filter-dropdown-body">
+        <div class="hint">Each group is AND'd internally; groups are OR'd together — e.g. (Fighting AND Dragon) OR (Fighting AND Ghost)</div>
+        <div id="type-groups"></div>
+        <button id="add-type-group" class="reset-btn" type="button">+ Add OR group</button>
+      </div>
+    </details>
+
+    <details class="filter-dropdown">
+      <summary>Stats</summary>
+      <div class="filter-dropdown-body">
+        <div class="stat-filter-grid" id="stat-filter-grid"></div>
+      </div>
+    </details>
+
+    <details class="filter-dropdown">
+      <summary>Abilities &amp; Moves</summary>
+      <div class="filter-dropdown-body">
+        <h3 class="filter-subhead">Abilities</h3>
+        <div class="hint">Matches if Pokémon has ANY selected ability</div>
+        <input type="text" id="ability-search" placeholder="Search abilities…" class="search-box">
+        <div class="chip-list" id="ability-chip-list"></div>
+        <div class="option-dropdown" id="ability-dropdown"></div>
+
+        <h3 class="filter-subhead">Moves</h3>
+        <div class="move-logic">
+          <label><input type="radio" name="move-logic" value="AND" checked> Must know ALL selected</label>
+          <label><input type="radio" name="move-logic" value="OR"> Must know ANY selected</label>
+        </div>
+        <div class="hint">Learn method(s) counted:</div>
+        <div class="method-checks" id="method-checks">
+          <label><input type="checkbox" value="level-up" checked> Level-up</label>
+          <label><input type="checkbox" value="machine" checked> TM/TR</label>
+          <label><input type="checkbox" value="egg" checked> Egg</label>
+          <label><input type="checkbox" value="tutor" checked> Tutor</label>
+          <label><input type="checkbox" value="other" checked> Other</label>
+        </div>
+        <input type="text" id="move-search" placeholder="Search moves…" class="search-box">
+        <div class="chip-list" id="move-chip-list"></div>
+        <div class="option-dropdown" id="move-dropdown"></div>
+      </div>
+    </details>
+
+    <button id="reset-filters" class="reset-btn">Reset filters</button>
+  </aside>
+
+  <main class="results">
+    <div class="results-toolbar">
+      <div class="hint">Click a column header to sort</div>
+      <div class="result-count" id="result-count"></div>
+    </div>
+
+    <div class="table-wrap">
+      <table id="results-table">
+        <thead>
+          <tr id="results-head-row">
+            <th></th>
+            <th data-key="dex">#</th>
+            <th data-key="name">Name</th>
+            <th>Type</th>
+            <th data-key="hp">HP</th>
+            <th data-key="attack">Atk</th>
+            <th data-key="defense">Def</th>
+            <th data-key="special-attack">SpA</th>
+            <th data-key="special-defense">SpD</th>
+            <th data-key="speed">Spe</th>
+            <th data-key="bst">BST</th>
+          </tr>
+        </thead>
+        <tbody id="results-body"></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<div class="teams-view" id="teams-view">
+  <div class="team-list-panel" id="team-list-panel">
+    <div class="teams-toolbar">
+      <h2>My Teams</h2>
+      <button id="new-team-btn" class="reset-btn" type="button">+ New Team</button>
+    </div>
+    <div class="hint" id="teams-empty-hint">No teams yet — click "+ New Team" to build one.</div>
+    <div class="team-list" id="team-list"></div>
+  </div>
+
+  <div class="team-editor-panel" id="team-editor-panel" style="display:none">
+    <div class="team-editor-header">
+      <button id="back-to-team-list" type="button" class="reset-btn">&larr; Back to Teams</button>
+      <input type="text" id="team-name-input" placeholder="Team name" class="search-box">
+      <div class="game-select-wrap">
+        <label for="team-game-select">Game</label>
+        <select id="team-game-select"></select>
+      </div>
+      <button id="save-team-btn" class="reset-btn" type="button">Save Team</button>
+      <span id="team-save-status" class="load-status"></span>
+    </div>
+    <div class="team-slots-grid" id="team-slots-grid"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="detail-backdrop">
+  <div class="modal" id="detail-modal"></div>
+</div>
+
+<div class="modal-backdrop" id="slot-backdrop">
+  <div class="modal slot-modal" id="slot-modal"></div>
+</div>
+
+<script src="champions-usage.data.js"></script>
+<script src="champions-data-raw/pokebase-dex.data.js"></script>
+<script src="champions-items.data.js"></script>
+<script src="general-items.data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

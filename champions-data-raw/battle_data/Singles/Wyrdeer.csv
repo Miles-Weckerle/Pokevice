@@ -1,0 +1,56 @@
+pokemon,column_position,category,rank,name,percentage,stat_up,stat_down,hp_points,attack_points,defense_points,sp_atk_points,sp_def_points,speed_points
+Wyrdeer,208,move,1,Psyshield Bash,66.6%,,,,,,,,
+Wyrdeer,208,move,2,Thunderbolt,34.1%,,,,,,,,
+Wyrdeer,208,move,3,Earth Power,33.4%,,,,,,,,
+Wyrdeer,208,move,4,Earthquake,31.2%,,,,,,,,
+Wyrdeer,208,move,5,Energy Ball,28.5%,,,,,,,,
+Wyrdeer,208,move,6,Trick Room,23.3%,,,,,,,,
+Wyrdeer,208,move,7,Psychic,22.0%,,,,,,,,
+Wyrdeer,208,move,8,Lunge,18.0%,,,,,,,,
+Wyrdeer,208,move,9,Body Slam,10.6%,,,,,,,,
+Wyrdeer,208,move,10,Light Screen,0.4%,,,,,,,,
+Wyrdeer,208,held_item,1,Leftovers,24.5%,,,,,,,,
+Wyrdeer,208,held_item,2,Sitrus Berry,21.6%,,,,,,,,
+Wyrdeer,208,held_item,3,Expert Belt,10.6%,,,,,,,,
+Wyrdeer,208,held_item,4,Light Clay,6.6%,,,,,,,,
+Wyrdeer,208,held_item,5,Choice Scarf,6.1%,,,,,,,,
+Wyrdeer,208,held_item,6,Quick Claw,5.9%,,,,,,,,
+Wyrdeer,208,held_item,7,Life Orb,5.8%,,,,,,,,
+Wyrdeer,208,held_item,8,Colbur Berry,4.3%,,,,,,,,
+Wyrdeer,208,held_item,9,Focus Sash,2.5%,,,,,,,,
+Wyrdeer,208,held_item,10,Lum Berry,1.8%,,,,,,,,
+Wyrdeer,208,teammate,1,Staraptor,,,,,,,,,
+Wyrdeer,208,teammate,2,Garchomp,,,,,,,,,
+Wyrdeer,208,teammate,3,Metagross,,,,,,,,,
+Wyrdeer,208,teammate,4,Raichu,,,,,,,,,
+Wyrdeer,208,teammate,5,Gallade,,,,,,,,,
+Wyrdeer,208,teammate,6,Gardevoir,,,,,,,,,
+Wyrdeer,208,teammate,7,Charizard,,,,,,,,,
+Wyrdeer,208,teammate,8,Kleavor,,,,,,,,,
+Wyrdeer,208,teammate,9,Starmie,,,,,,,,,
+Wyrdeer,208,teammate,10,Blaziken,,,,,,,,,
+Wyrdeer,208,stat_alignment,1,Modest,25.0%,Sp. Atk,Attack,,,,,,
+Wyrdeer,208,stat_alignment,2,Adamant,19.8%,Attack,Sp. Atk,,,,,,
+Wyrdeer,208,stat_alignment,3,Impish,15.1%,Defense,Sp. Atk,,,,,,
+Wyrdeer,208,stat_alignment,4,Brave,12.0%,Attack,Speed,,,,,,
+Wyrdeer,208,stat_alignment,5,Careful,6.4%,Sp. Def,Sp. Atk,,,,,,
+Wyrdeer,208,stat_alignment,6,Quiet,3.8%,Sp. Atk,Speed,,,,,,
+Wyrdeer,208,stat_alignment,7,Sassy,3.5%,Sp. Def,Speed,,,,,,
+Wyrdeer,208,stat_alignment,8,Relaxed,2.9%,Defense,Speed,,,,,,
+Wyrdeer,208,stat_alignment,9,Naughty,2.8%,Attack,Sp. Def,,,,,,
+Wyrdeer,208,stat_alignment,10,Bold,2.3%,Defense,Attack,,,,,,
+Wyrdeer,208,stat_points,1,,8.5%,,,0,0,29,30,0,7
+Wyrdeer,208,stat_points,2,,6.3%,,,32,32,2,0,0,0
+Wyrdeer,208,stat_points,3,,5.6%,,,32,2,32,0,0,0
+Wyrdeer,208,stat_points,4,,4.2%,,,32,32,0,0,2,0
+Wyrdeer,208,stat_points,5,,2.9%,,,0,32,2,0,0,32
+Wyrdeer,208,stat_points,6,,2.7%,,,2,32,32,0,0,0
+Wyrdeer,208,stat_points,7,,2.6%,,,32,32,0,0,0,2
+Wyrdeer,208,stat_points,8,,1.8%,,,31,0,0,31,0,4
+Wyrdeer,208,stat_points,9,,1.7%,,,2,32,10,0,22,0
+Wyrdeer,208,stat_points,10,,1.6%,,,12,32,13,0,9,0
+Wyrdeer,208,stat_points,11,,1.6%,,,2,32,0,0,0,32
+Wyrdeer,208,stat_points,12,,1.5%,,,32,0,2,0,32,0
+Wyrdeer,208,ability,1,Intimidate,87.4%,,,,,,,,
+Wyrdeer,208,ability,2,Sap Sipper,9.5%,,,,,,,,
+Wyrdeer,208,ability,3,Frisk,3.0%,,,,,,,,
