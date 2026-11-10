@@ -1,6 +1,6 @@
-/* Pokémon Competitive Search — data via PokeAPI GraphQL (beta.pokeapi.co), cached in IndexedDB. */
+/* Pokémon Competitive Search — data via PokeAPI GraphQL (graphql.pokeapi.co), cached in IndexedDB. */
 
-const GRAPHQL_URL = 'https://beta.pokeapi.co/graphql/v1beta';
+const GRAPHQL_URL = 'https://graphql.pokeapi.co/v1beta2';
 const DB_NAME = 'pokedex-search-cache';
 const DB_VERSION = 1;
 const STORE_GAMES = 'games';
@@ -219,8 +219,8 @@ async function loadEvolutionGraph() {
     hasNextEvolution = new Set(cached.hasNext);
     return;
   }
-  const data = await gql(`query { pokemon_v2_pokemonspecies { id evolves_from_species_id } }`);
-  const species = data.pokemon_v2_pokemonspecies;
+  const data = await gql(`query { pokemonspecies { id evolves_from_species_id } }`);
+  const species = data.pokemonspecies;
   const nextSet = new Set();
   for (const s of species) {
     if (s.evolves_from_species_id) nextSet.add(s.evolves_from_species_id);
@@ -230,12 +230,12 @@ async function loadEvolutionGraph() {
 }
 
 const MOVES_QUERY = `
-query { pokemon_v2_move {
+query { move {
   name power pp accuracy priority move_effect_chance
-  pokemon_v2_type { name }
-  pokemon_v2_movedamageclass { name }
-  pokemon_v2_moveeffect {
-    pokemon_v2_moveeffecteffecttexts(where: {pokemon_v2_language: {name: {_eq: "en"}}}) { short_effect }
+  type { name }
+  movedamageclass { name }
+  moveeffect {
+    moveeffecteffecttexts(where: {language: {name: {_eq: "en"}}}) { short_effect }
   }
 } }`;
 
@@ -247,15 +247,15 @@ async function loadMoveDictionary() {
   }
   const data = await gql(MOVES_QUERY);
   const map = new Map();
-  for (const m of data.pokemon_v2_move) {
-    const effectTexts = m.pokemon_v2_moveeffect ? m.pokemon_v2_moveeffect.pokemon_v2_moveeffecteffecttexts : [];
+  for (const m of data.move) {
+    const effectTexts = m.moveeffect ? m.moveeffect.moveeffecteffecttexts : [];
     let shortEffect = effectTexts[0] ? effectTexts[0].short_effect : '';
     if (shortEffect && m.move_effect_chance) {
       shortEffect = shortEffect.replace(/\$effect_chance/g, m.move_effect_chance);
     }
     map.set(m.name, {
-      type: m.pokemon_v2_type ? m.pokemon_v2_type.name : null,
-      damageClass: m.pokemon_v2_movedamageclass ? m.pokemon_v2_movedamageclass.name : null,
+      type: m.type ? m.type.name : null,
+      damageClass: m.movedamageclass ? m.movedamageclass.name : null,
       power: m.power,
       accuracy: m.accuracy,
       pp: m.pp,
@@ -268,9 +268,9 @@ async function loadMoveDictionary() {
 }
 
 const ABILITIES_QUERY = `
-query { pokemon_v2_ability {
+query { ability {
   name generation_id
-  pokemon_v2_abilityeffecttexts(where: {pokemon_v2_language: {name: {_eq: "en"}}}) { short_effect }
+  abilityeffecttexts(where: {language: {name: {_eq: "en"}}}) { short_effect }
 } }`;
 
 async function loadAbilityDictionary() {
@@ -281,8 +281,8 @@ async function loadAbilityDictionary() {
   }
   const data = await gql(ABILITIES_QUERY);
   const map = new Map();
-  for (const a of data.pokemon_v2_ability) {
-    const texts = a.pokemon_v2_abilityeffecttexts;
+  for (const a of data.ability) {
+    const texts = a.abilityeffecttexts;
     map.set(a.name, {
       generation: a.generation_id,
       shortEffect: texts[0] ? texts[0].short_effect : '',
@@ -352,20 +352,20 @@ function findMegaVariant(baseSlug, itemDisplayName, fullPokemonList) {
 // ---------- Per-game Pokémon data ----------
 const GAME_QUERY = `
 query GameData($vg: String!) {
-  pokemon_v2_pokemon(
-    where: {pokemon_v2_pokemonmoves: {pokemon_v2_versiongroup: {name: {_eq: $vg}}}}
+  pokemon(
+    where: {pokemonmoves: {versiongroup: {name: {_eq: $vg}}}}
     order_by: {id: asc}
   ) {
     id
     name
-    pokemon_v2_pokemonstats { base_stat pokemon_v2_stat { name } }
-    pokemon_v2_pokemontypes(order_by: {slot: asc}) { slot pokemon_v2_type { name } }
-    pokemon_v2_pokemonabilities(order_by: {slot: asc}) { is_hidden pokemon_v2_ability { name } }
-    pokemon_v2_pokemonspecy { id evolves_from_species_id }
-    pokemon_v2_pokemonmoves(where: {pokemon_v2_versiongroup: {name: {_eq: $vg}}}) {
+    pokemonstats { base_stat stat { name } }
+    pokemontypes(order_by: {slot: asc}) { slot type { name } }
+    pokemonabilities(order_by: {slot: asc}) { is_hidden ability { name } }
+    pokemonspecy { id evolves_from_species_id }
+    pokemonmoves(where: {versiongroup: {name: {_eq: $vg}}}) {
       level
-      pokemon_v2_movelearnmethod { name }
-      pokemon_v2_move { name }
+      movelearnmethod { name }
+      move { name }
     }
   }
 }`;
@@ -379,27 +379,27 @@ async function loadGameData(vg) {
     return cached.pokemon;
   }
   const data = await gql(GAME_QUERY, { vg });
-  const pokemon = data.pokemon_v2_pokemon.map(rawToPokemon);
+  const pokemon = data.pokemon.map(rawToPokemon);
   await idbSet(STORE_GAMES, vg, { pokemon, fetchedAt: Date.now() });
   return pokemon;
 }
 
 function rawToPokemon(p) {
   const stats = {};
-  for (const s of p.pokemon_v2_pokemonstats) stats[s.pokemon_v2_stat.name] = s.base_stat;
+  for (const s of p.pokemonstats) stats[s.stat.name] = s.base_stat;
   const bst = STAT_KEYS.reduce((sum, k) => sum + (stats[k] || 0), 0);
-  const types = p.pokemon_v2_pokemontypes.map(t => t.pokemon_v2_type.name);
-  const abilities = p.pokemon_v2_pokemonabilities.map(a => ({ name: a.pokemon_v2_ability.name, hidden: a.is_hidden }));
+  const types = p.pokemontypes.map(t => t.type.name);
+  const abilities = p.pokemonabilities.map(a => ({ name: a.ability.name, hidden: a.is_hidden }));
 
   const movesByMethod = { 'level-up': [], machine: [], egg: [], tutor: [], other: [] };
   const seenMoveKeys = new Set();
-  for (const m of p.pokemon_v2_pokemonmoves) {
-    const methodName = m.pokemon_v2_movelearnmethod.name;
+  for (const m of p.pokemonmoves) {
+    const methodName = m.movelearnmethod.name;
     const bucket = METHOD_MAP[methodName] || 'other';
-    const key = bucket + ':' + m.pokemon_v2_move.name;
+    const key = bucket + ':' + m.move.name;
     if (seenMoveKeys.has(key)) continue;
     seenMoveKeys.add(key);
-    movesByMethod[bucket].push({ name: m.pokemon_v2_move.name, level: m.level });
+    movesByMethod[bucket].push({ name: m.move.name, level: m.level });
   }
   for (const bucket of Object.keys(movesByMethod)) {
     movesByMethod[bucket].sort((a, b) => (a.level - b.level) || a.name.localeCompare(b.name));
@@ -409,7 +409,7 @@ function rawToPokemon(p) {
     for (const mv of movesByMethod[bucket]) allMoveNames.add(mv.name);
   }
 
-  const speciesId = p.pokemon_v2_pokemonspecy.id;
+  const speciesId = p.pokemonspecy.id;
 
   return {
     id: p.id,
@@ -435,9 +435,9 @@ function applyEvolutionFlags(list) {
 // ---------- National Dex (per-Pokémon "most recent game with data") ----------
 const RECENCY_PAIRS_QUERY = `
 query {
-  pokemon_v2_pokemonmove(distinct_on: [pokemon_id, version_group_id], order_by: {pokemon_id: asc, version_group_id: asc}) {
+  pokemonmove(distinct_on: [pokemon_id, version_group_id], order_by: {pokemon_id: asc, version_group_id: asc}) {
     pokemon_id
-    pokemon_v2_versiongroup { name }
+    versiongroup { name }
   }
 }`;
 
@@ -447,7 +447,7 @@ async function loadRecencyPairs() {
     return cached.pairs;
   }
   const data = await gql(RECENCY_PAIRS_QUERY);
-  const pairs = data.pokemon_v2_pokemonmove.map(r => [r.pokemon_id, r.pokemon_v2_versiongroup.name]);
+  const pairs = data.pokemonmove.map(r => [r.pokemon_id, r.versiongroup.name]);
   await idbSet(STORE_META, 'recency-pairs', { pairs, fetchedAt: Date.now() });
   return pairs;
 }
