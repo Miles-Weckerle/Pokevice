@@ -223,7 +223,69 @@ let hasNextEvolution = null; // Set<speciesId> that have at least one species ev
 let moveDetails = null; // Map<moveName, {type,damageClass,power,accuracy,pp,priority,shortEffect}>
 let abilityDetails = null; // Map<abilityName, {generation, shortEffect}>
 
+// ---------- Offline snapshot (data/snapshot-core.js + data/games/*.js) ----------
+// Built by scripts/build-snapshot.ps1 from PokeAPI's own source tables. When present it's used instead of
+// calling PokeAPI at runtime; the live API (plus its IndexedDB cache) remains only as a fallback.
+const snapshotScripts = new Map();
+function loadScript(src) {
+  if (!snapshotScripts.has(src)) {
+    snapshotScripts.set(src, new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = () => resolve(); s.onerror = () => reject(new Error(`Could not load ${src}`));
+      document.head.appendChild(s);
+    }));
+  }
+  return snapshotScripts.get(src);
+}
+
+let snapshotMoveSlugs = null; // moveId -> slug
+function snapshotMoveName(id) {
+  if (!snapshotMoveSlugs) {
+    snapshotMoveSlugs = new Map();
+    for (const [slug, row] of Object.entries(window.SNAPSHOT_CORE.moves)) snapshotMoveSlugs.set(row[0], slug);
+  }
+  return snapshotMoveSlugs.get(id);
+}
+
+// [id, name, speciesId, [6 stats], [types], [[ability, hidden]], levelUp, machine, egg, tutor, other] -> app Pokémon object
+function snapshotRecordToPokemon(rec) {
+  const [id, name, speciesId, st, types, abs, ...buckets] = rec;
+  const stats = {};
+  STAT_KEYS.forEach((k, i) => { stats[k] = st[i]; });
+  const bst = STAT_KEYS.reduce((sum, k) => sum + (stats[k] || 0), 0);
+  const names = ['level-up', 'machine', 'egg', 'tutor', 'other'];
+  const movesByMethod = {};
+  const allMoveNames = new Set();
+  names.forEach((bucket, b) => {
+    movesByMethod[bucket] = buckets[b].map(v => {
+      const moveId = b === 0 ? v >> 7 : v;
+      return { name: snapshotMoveName(moveId), level: b === 0 ? (v & 127) : 0 };
+    }).filter(m => m.name);
+    movesByMethod[bucket].sort((a, b2) => (a.level - b2.level) || a.name.localeCompare(b2.name));
+    for (const m of movesByMethod[bucket]) allMoveNames.add(m.name);
+  });
+  return {
+    id, name, speciesId, dex: speciesId, types, stats, bst,
+    weight: (window.SNAPSHOT_CORE.pokemon[name] || [])[2] || null,
+    abilities: abs.map(a => ({ name: a[0], hidden: !!a[1] })),
+    movesByMethod, allMoveNames, isFinalEvolution: null,
+  };
+}
+
+async function loadSnapshotGame(vg) {
+  if (!window.SNAPSHOT_CORE || !window.SNAPSHOT_CORE.games.includes(vg)) return null;
+  try {
+    if (!(window.SNAPSHOT_GAMES && window.SNAPSHOT_GAMES[vg])) await loadScript(`data/games/${vg}.js`);
+  } catch (err) { console.warn(err); return null; }
+  const raw = window.SNAPSHOT_GAMES && window.SNAPSHOT_GAMES[vg];
+  return raw ? raw.map(snapshotRecordToPokemon) : null;
+}
+
 async function loadEvolutionGraph() {
+  if (window.SNAPSHOT_CORE) {
+    hasNextEvolution = new Set(Object.values(window.SNAPSHOT_CORE.evolvesFrom));
+    return;
+  }
   const cached = await idbGet(STORE_META, 'evolution-graph');
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     hasNextEvolution = new Set(cached.hasNext);
@@ -250,6 +312,14 @@ query { move {
 } }`;
 
 async function loadMoveDictionary() {
+  if (window.SNAPSHOT_CORE) {
+    const map = new Map();
+    for (const [slug, r] of Object.entries(window.SNAPSHOT_CORE.moves)) {
+      map.set(slug, { type: r[1], damageClass: r[2], power: r[3], accuracy: r[4], pp: r[5], priority: r[6], shortEffect: r[13] || '' });
+    }
+    moveDetails = map;
+    return;
+  }
   const cached = await idbGet(STORE_META, 'move-dictionary');
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     moveDetails = new Map(cached.entries);
@@ -283,7 +353,28 @@ query { ability {
   abilityeffecttexts(where: {language: {name: {_eq: "en"}}}) { short_effect }
 } }`;
 
+// Extra per-move data the damage engine needs (flags, hit counts, target, secondary-effect chance) from the snapshot.
+let snapshotExtrasCache = null;
+function snapshotMoveExtras() {
+  if (!window.SNAPSHOT_CORE) return null;
+  if (!snapshotExtrasCache) {
+    snapshotExtrasCache = new Map();
+    for (const [slug, r] of Object.entries(window.SNAPSHOT_CORE.moves)) {
+      const flags = r[12] ? r[12].split(',') : [];
+      if (r[11] < 0) flags.push('recoil');
+      snapshotExtrasCache.set(slug, { chance: r[7], target: r[8], minHits: r[9], maxHits: r[10], flags });
+    }
+  }
+  return snapshotExtrasCache;
+}
+
 async function loadAbilityDictionary() {
+  if (window.SNAPSHOT_CORE) {
+    const map = new Map();
+    for (const [slug, r] of Object.entries(window.SNAPSHOT_CORE.abilities)) map.set(slug, { generation: r[0], shortEffect: r[1] || '' });
+    abilityDetails = map;
+    return;
+  }
   const cached = await idbGet(STORE_META, 'ability-dictionary');
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     abilityDetails = new Map(cached.entries);
@@ -384,15 +475,29 @@ async function loadGameData(vg) {
   if (vg === NATIONAL_DEX_VG) return loadNationalDex();
   if (vg === CHAMPIONS_VG) return loadChampionsGame();
 
+  const snap = await loadSnapshotGame(vg);
+  if (snap) return snap;
+
   const cached = await idbGet(STORE_GAMES, vg);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.pokemon;
   }
-  const data = await gql(GAME_QUERY, { vg });
-  const pokemon = data.pokemon.map(rawToPokemon);
-  await idbSet(STORE_GAMES, vg, { pokemon, fetchedAt: Date.now() });
-  return pokemon;
+  try {
+    const data = await gql(GAME_QUERY, { vg }, DLC_BASE_GAME[vg] ? 6000 : 45000);
+    const pokemon = data.pokemon.map(rawToPokemon);
+    await idbSet(STORE_GAMES, vg, { pokemon, fetchedAt: Date.now() });
+    return pokemon;
+  } catch (err) {
+    // The DLC version groups aren't in PokeAPI's source tables, so the snapshot can't cover them; if the live API
+    // is unreachable, fall back to the base game they extend.
+    const base = DLC_BASE_GAME[vg];
+    const fallback = base ? await loadSnapshotGame(base) : null;
+    if (fallback) { console.warn(`Using ${base} data for ${vg} (live API unavailable)`); return fallback; }
+    throw err;
+  }
 }
+
+const DLC_BASE_GAME = { 'the-isle-of-armor': 'sword-shield', 'the-crown-tundra': 'sword-shield', 'the-teal-mask': 'scarlet-violet', 'the-indigo-disk': 'scarlet-violet' };
 
 function rawToPokemon(p) {
   const stats = {};
@@ -463,6 +568,9 @@ async function loadRecencyPairs() {
 }
 
 async function loadNationalDex(onProgress) {
+  const snap = await loadSnapshotGame(NATIONAL_DEX_VG);
+  if (snap) { snap.sort((a, b) => a.dex - b.dex || a.id - b.id); return snap; }
+
   const cached = await idbGet(STORE_GAMES, NATIONAL_DEX_VG);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
     return cached.pokemon;
@@ -538,8 +646,16 @@ function findNationalMatch(nationalByName, slug) {
     || null;
 }
 
+// Light ids-only view of the National Dex (id / species / weight per Pokémon) — all Champions needs from it.
+async function loadNationalLite() {
+  if (window.SNAPSHOT_CORE) {
+    return Object.entries(window.SNAPSHOT_CORE.pokemon).map(([name, r]) => ({ id: r[0], name, speciesId: r[1], dex: r[1], weight: r[2] }));
+  }
+  return loadNationalDex();
+}
+
 async function loadChampionsGame() {
-  const [dex, usage, nationalDex] = await Promise.all([loadChampionsDex(), loadChampionsUsage(), loadNationalDex()]);
+  const [dex, usage, nationalDex] = await Promise.all([loadChampionsDex(), loadChampionsUsage(), loadNationalLite()]);
   const nationalByName = new Map(nationalDex.map(m => [m.name, m]));
   const list = [];
   let syntheticId = 900000;
@@ -603,6 +719,7 @@ async function loadChampionsGame() {
       displayNameOverride: entry.displayName,
       speciesId: natMatch ? natMatch.speciesId : null,
       dex: natMatch ? natMatch.dex : 99999,
+      weight: natMatch && natMatch.weight ? natMatch.weight : null,
       usesBaseFormArt: usedBaseFormFallback,
       types,
       stats,
@@ -612,7 +729,8 @@ async function loadChampionsGame() {
       allMoveNames,
       isFinalEvolution: null,
     };
-    const usageInfo = usage.get(slug);
+    // The usage export keys multi-form Pokémon by their PokeAPI form name (e.g. "meowstic-male", "floette"), the roster by the plain slug.
+    const usageInfo = usage.get(slug) || usage.get(CHAMPIONS_NAME_ALIASES[slug]) || (slug === 'floette-eternal' ? usage.get('floette') : slug === 'aegislash-blade' ? usage.get('aegislash-shield') : null);
     if (usageInfo) mon.champions = usageInfo;
     list.push(mon);
   }
@@ -1369,12 +1487,15 @@ function saveTeamsToStorage() {
 function switchView(view) {
   document.querySelectorAll('#main-view-nav .view-nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
   const calcView = document.getElementById('calc-view');
+  const simView = document.getElementById('sim-view');
   el.searchView.style.display = view === 'search' ? '' : 'none';
   el.searchTopbarRight.style.display = view === 'search' ? '' : 'none';
   el.teamsView.classList.toggle('open', view === 'teams');
   if (calcView) calcView.classList.toggle('open', view === 'calc');
+  if (simView) simView.classList.toggle('open', view === 'sim');
   if (view === 'teams') closeTeamEditor(false);
   if (view === 'calc' && window.onCalcViewShown) window.onCalcViewShown();
+  if (view === 'sim' && window.onSimViewShown) window.onSimViewShown();
 }
 
 async function getTeamGamePokemon(vg) {

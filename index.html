@@ -6,15 +6,11 @@
 <title>Pokémon Competitive Search</title>
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="calc.css">
+<link rel="stylesheet" href="sim.css">
 </head>
 <body>
 <header class="topbar">
   <h1>Pokémon Competitive Search</h1>
-  <nav class="view-nav" id="main-view-nav">
-    <button type="button" class="view-nav-btn active" data-view="search">Search</button>
-    <button type="button" class="view-nav-btn" data-view="teams">Team Builder</button>
-    <button type="button" class="view-nav-btn" data-view="calc">Damage Calc</button>
-  </nav>
   <div class="topbar-right" id="search-topbar-right">
     <div class="game-select-wrap">
       <label>Game</label>
@@ -30,6 +26,12 @@
       Final evolution only
     </label>
   </div>
+  <nav class="view-nav main-nav" id="main-view-nav">
+    <button type="button" class="view-nav-btn active" data-view="search">Search</button>
+    <button type="button" class="view-nav-btn" data-view="teams">Team Builder</button>
+    <button type="button" class="view-nav-btn" data-view="calc">Damage Calc</button>
+    <button type="button" class="view-nav-btn" data-view="sim">Battle Sim</button>
+  </nav>
 </header>
 
 <div class="layout" id="search-view">
@@ -148,6 +150,7 @@
 </div>
 
 <div class="calc-view" id="calc-view"></div>
+<div class="sim-view" id="sim-view"></div>
 
 <div class="modal-backdrop" id="detail-backdrop">
   <div class="modal" id="detail-modal"></div>
@@ -191,8 +194,11 @@
 <script src="champions-data-raw/pokebase-dex.data.js"></script>
 <script src="champions-items.data.js"></script>
 <script src="general-items.data.js"></script>
+<script src="data/snapshot-core.js"></script>
 <script src="app.js"></script>
 <script src="calc-engine.js"></script>
 <script src="calc-ui.js"></script>
+<script src="sim-engine.js"></script>
+<script src="sim-ui.js"></script>
 </body>
 </html>

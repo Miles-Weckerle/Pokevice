@@ -94,6 +94,8 @@
   }
 
   async function fetchMoveExtras() {
+    const snap = snapshotMoveExtras();
+    if (snap) { cs.extras = snap; return; }
     try {
       const cached = await idbGet(STORE_META, EXTRAS_KEY);
       if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) { cs.extras = new Map(cached.entries); return; }
@@ -221,7 +223,9 @@
     if (s.conds.tailwind) spe *= 2;
     if (s.status === 'par') spe = Math.floor(spe / 2);
     if (s.item === 'choice-scarf' && !cs.magicRoom) spe = Math.floor(spe * 1.5);
+    const rosterMon = monOf(s);
     return {
+      weight: rosterMon ? rosterMon.weight : null,
       label: s.label, types: s.types.filter(Boolean), teraType: s.tera || null, level: lvl, stats, boosts: s.boosts, evs: s.evs, natureSigns,
       ability: s.ability, item: s.item, status: s.status, curHp, canEvolve: s.canEvolve, flags: s.flags, speedFinal: spe,
     };

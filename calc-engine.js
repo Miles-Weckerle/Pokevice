@@ -455,6 +455,7 @@ const CalcEngine = (() => {
     res.minPct = Math.floor(res.min * 1000 / maxHp) / 10;
     res.maxPct = Math.floor(res.max * 1000 / maxHp) / 10;
     res.possible = hitRolls.length === 1 ? hitRolls[0] : null;
+    if (field.fast) return res;   // callers running thousands of evaluations only need the damage numbers
 
     const haz = hazardDamage(d, field);
     const hp = Math.max(1, d.curHp - haz.total);
@@ -521,12 +522,26 @@ const CalcEngine = (() => {
     },
     'stored-power': c => 20 + 20 * positiveBoosts(c.a),
     'power-trip': c => 20 + 20 * positiveBoosts(c.a),
+    'low-kick': c => weightBp(weightKg(c.d, c.dItem)),
+    'grass-knot': c => weightBp(weightKg(c.d, c.dItem)),
+    'heavy-slam': c => ratioBp(weightKg(c.a, c.aItem) / weightKg(c.d, c.dItem)),
+    'heat-crash': c => ratioBp(weightKg(c.a, c.aItem) / weightKg(c.d, c.dItem)),
   };
+  // Weight-based moves. `weight` is PokeAPI's hectograms; Heavy/Light Metal and Float Stone change it.
+  function weightKg(mon, item) {
+    let kg = (mon.weight || 500) / 10;
+    if (mon.ability === 'heavy-metal') kg *= 2;
+    if (mon.ability === 'light-metal') kg /= 2;
+    if (item === 'float-stone') kg /= 2;
+    return Math.max(0.1, kg);
+  }
+  const weightBp = kg => (kg < 10 ? 20 : kg < 25 ? 40 : kg < 50 ? 60 : kg < 100 ? 80 : kg < 200 ? 100 : 120);
+  const ratioBp = r => (r >= 5 ? 120 : r >= 4 ? 100 : r >= 3 ? 80 : r >= 2 ? 60 : 40);
   function positiveBoosts(mon) { return Object.values(mon.boosts || {}).reduce((s, v) => s + Math.max(0, v), 0); }
   function flailBp(mon) {
     const p = Math.floor(48 * mon.curHp / mon.stats.hp);
     return p <= 1 ? 200 : p <= 4 ? 150 : p <= 9 ? 100 : p <= 16 ? 80 : p <= 32 ? 40 : 20;
   }
 
-  return { TYPES, CHART, typeEffectiveness, calc, stage, hazardDamage, pretty, FIXED_HITS, ALWAYS_CRIT };
+  return { TYPES, CHART, typeEffectiveness, calc, stage, hazardDamage, pretty, FIXED_HITS, ALWAYS_CRIT, TYPE_ITEMS, RESIST_BERRIES };
 })();
