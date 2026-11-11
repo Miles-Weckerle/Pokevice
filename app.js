@@ -81,19 +81,12 @@ const STAT_LABELS = { hp: 'HP', attack: 'Atk', defense: 'Def', 'special-attack':
 
 const DISPLAY_LEVEL = 50;
 
-// EV caps per game. Champions redesigned EVs to a smaller, cleaner 0-32-per-stat / 66-total
-// scale instead of the mainline 0-252 / 510. Verified against pokebase.app's own team builder
-// (base-stat + Lvl-50 numbers matched the standard formula exactly at 0 EV, for two different
-// Pokémon across all six stats) that Champions keeps the SAME stat formula shape and fixes IVs
-// at a flat 31 — the one thing not independently confirmed is whether a nonzero EV contributes
-// directly (assumed here, since 32 is a clean number to use as a 1:1 contribution cap) or via
-// some other divisor; if in-game numbers ever look off, this is the term to revisit.
+// EV caps per game. Champions replaced EVs with "stat points": 0-32 per stat / 66 total
+// instead of the mainline 0-252 / 510. IVs are fixed at 31 there (see computeStat).
 function evCapsForGame(vg) {
   return vg === CHAMPIONS_VG ? { perStat: 32, total: 66 } : { perStat: 252, total: 510 };
 }
 
-// Standard Pokémon Lvl-50 stat formula. For Champions, IV is always fixed at 31 and the EV
-// term is added directly (no /4 division); for other games EVs still divide by 4 as normal.
 // name -> { plus: statKey|null, minus: statKey|null } — null/null for the 5 neutral natures.
 const NATURES = {
   hardy: { plus: null, minus: null }, lonely: { plus: 'attack', minus: 'defense' },
@@ -120,10 +113,17 @@ function natureModifier(natureName, statKey) {
   return 1;
 }
 
-function computeStat(base, statKey, ev, iv, isChampions, natureName) {
-  const evTerm = isChampions ? (ev || 0) : Math.floor((ev || 0) / 4);
-  const ivTerm = isChampions ? 31 : (iv ?? 31);
-  const level = DISPLAY_LEVEL;
+function computeStat(base, statKey, ev, iv, isChampions, natureName, level = DISPLAY_LEVEL) {
+  if (isChampions) {
+    // Champions: stat points are added 1:1 after level scaling and BEFORE the nature multiplier.
+    // Verified against a real Champions damage calculator (Absol 130 base Atk + 31 SP = 181,
+    // 75 base Spe + 32 SP with a +Spe nature = 139).
+    const core = Math.floor((2 * base + 31) * level / 100);
+    if (statKey === 'hp') return core + level + 10 + (ev || 0);
+    return Math.floor((core + 5 + (ev || 0)) * natureModifier(natureName, statKey));
+  }
+  const evTerm = Math.floor((ev || 0) / 4);
+  const ivTerm = iv ?? 31;
   if (statKey === 'hp') {
     return Math.floor((2 * base + ivTerm + evTerm) * level / 100) + level + 10;
   }
