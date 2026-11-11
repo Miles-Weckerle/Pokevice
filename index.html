@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pokémon Competitive Search</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="calc.css">
 </head>
 <body>
 <header class="topbar">
@@ -12,6 +13,7 @@
   <nav class="view-nav" id="main-view-nav">
     <button type="button" class="view-nav-btn active" data-view="search">Search</button>
     <button type="button" class="view-nav-btn" data-view="teams">Team Builder</button>
+    <button type="button" class="view-nav-btn" data-view="calc">Damage Calc</button>
   </nav>
   <div class="topbar-right" id="search-topbar-right">
     <div class="game-select-wrap">
@@ -145,6 +147,8 @@
   </div>
 </div>
 
+<div class="calc-view" id="calc-view"></div>
+
 <div class="modal-backdrop" id="detail-backdrop">
   <div class="modal" id="detail-modal"></div>
 </div>
@@ -188,5 +192,7 @@
 <script src="champions-items.data.js"></script>
 <script src="general-items.data.js"></script>
 <script src="app.js"></script>
+<script src="calc-engine.js"></script>
+<script src="calc-ui.js"></script>
 </body>
 </html>

@@ -1357,17 +1357,14 @@ function saveTeamsToStorage() {
 }
 
 function switchView(view) {
-  document.querySelectorAll('.view-nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
-  if (view === 'teams') {
-    el.searchView.style.display = 'none';
-    el.searchTopbarRight.style.display = 'none';
-    el.teamsView.classList.add('open');
-    closeTeamEditor(false);
-  } else {
-    el.searchView.style.display = '';
-    el.searchTopbarRight.style.display = '';
-    el.teamsView.classList.remove('open');
-  }
+  document.querySelectorAll('#main-view-nav .view-nav-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
+  const calcView = document.getElementById('calc-view');
+  el.searchView.style.display = view === 'search' ? '' : 'none';
+  el.searchTopbarRight.style.display = view === 'search' ? '' : 'none';
+  el.teamsView.classList.toggle('open', view === 'teams');
+  if (calcView) calcView.classList.toggle('open', view === 'calc');
+  if (view === 'teams') closeTeamEditor(false);
+  if (view === 'calc' && window.onCalcViewShown) window.onCalcViewShown();
 }
 
 async function getTeamGamePokemon(vg) {
