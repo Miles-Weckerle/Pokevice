@@ -195,16 +195,26 @@ async function idbSet(store, key, value) {
 }
 
 // ---------- GraphQL ----------
-async function gql(query, variables) {
-  const res = await fetch(GRAPHQL_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, variables }),
-  });
-  if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
-  const json = await res.json();
-  if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
-  return json.data;
+async function gql(query, variables, timeoutMs = 45000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(GRAPHQL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, variables }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error(`GraphQL HTTP ${res.status}`);
+    const json = await res.json();
+    if (json.errors) throw new Error(json.errors.map(e => e.message).join('; '));
+    return json.data;
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('PokeAPI took too long to respond');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // ---------- Global reference dictionaries (moves / abilities / evolution) ----------

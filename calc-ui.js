@@ -84,8 +84,16 @@
   }
 
   // ---------- data loading ----------
-  async function loadMoveExtras() {
-    if (cs.extras) return;
+  let extrasPromise = null;
+  // Optional extra move data (contact/punch flags, hit counts, spread targets). Loaded in the background so the
+  // calculator never waits on it; results refresh once it arrives.
+  function loadMoveExtras() {
+    if (cs.extras) return Promise.resolve();
+    if (!extrasPromise) extrasPromise = fetchMoveExtras().finally(() => { extrasPromise = null; });
+    return extrasPromise;
+  }
+
+  async function fetchMoveExtras() {
     try {
       const cached = await idbGet(STORE_META, EXTRAS_KEY);
       if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) { cs.extras = new Map(cached.entries); return; }
@@ -120,12 +128,17 @@
   }
 
   async function applyGame(vg) {
-    cs.game = vg; cs.loading = true; setStatus('Loading…');
+    cs.game = vg; cs.loading = true; cs.error = null; setStatus('Loading…');
     setModeToggleState(root.querySelector('#calc-mode-toggle'), root.querySelector('#calc-game-select'), vg);
+    const slowTimer = setTimeout(() => { if (cs.loading) setStatus('Still loading… PokeAPI can be slow. The data is cached after the first successful load.'); }, 8000);
     try {
       cs.roster = await loadRoster(vg);
       cs.rosterMap = new Map(cs.roster.map(p => [p.name, p]));
-      await loadMoveExtras();
+      loadMoveExtras().then(() => {
+        if (cs.game !== vg) return;
+        setStatus(`${cs.roster.length} Pokémon` + (cs.extrasError ? ' · move flag data unavailable (contact/punch/spread abilities may not apply)' : ''));
+        renderAll();
+      });
       for (const s of cs.sides) {
         const mon = monOf(s);
         if (s.name && !mon) Object.assign(s, makeSide(), { conds: s.conds });
@@ -133,11 +146,13 @@
         if (isChampions()) s.level = 50;
         if (!teraAllowed()) s.tera = null;
       }
-      setStatus(`${cs.roster.length} Pokémon` + (cs.extrasError ? ' · move flag data unavailable (contact/punch/spread abilities may not apply)' : ''));
+      setStatus(`${cs.roster.length} Pokémon · loading move flags…`);
     } catch (e) {
       console.error(e);
-      setStatus(`Failed to load data: ${e.message}`);
+      cs.error = e.message;
+      setStatus('Could not load data');
     }
+    clearTimeout(slowTimer);
     cs.loading = false;
     renderAll();
   }
@@ -446,6 +461,14 @@
   function renderStage() {
     const stage = root.querySelector('#calc-stage');
     const a = cs.sides[0], b = cs.sides[1];
+    if (cs.loading && !cs.roster.length) {
+      stage.innerHTML = `<div class="stg-empty"><div class="stg-vs">…</div><p>Loading Pokémon data…</p></div>`;
+      return;
+    }
+    if (cs.error) {
+      stage.innerHTML = `<div class="stg-empty"><div class="stg-vs">!</div><p>Couldn't load Pokémon data from PokeAPI:<br><em>${esc(cs.error)}</em><br>PokeAPI is sometimes down or slow. Nothing is lost, so try again in a moment.</p><button type="button" class="reset-btn" data-act="retry">Retry</button></div>`;
+      return;
+    }
     if (!a.name || !b.name) {
       stage.innerHTML = `<div class="stg-empty"><div class="stg-vs">VS</div><p>Choose two Pokémon and give them moves.<br>The damage breakdown appears here.</p></div>`;
       return;
@@ -715,6 +738,7 @@
       case 'reset':
         cs.sides = [makeSide(), makeSide()]; cs.weather = ''; cs.terrain = ''; cs.gravity = cs.magicRoom = cs.wonderRoom = false;
         cs.auto = { weather: null, terrain: null }; cs.editMoves = {}; renderAll(); break;
+      case 'retry': applyGame(cs.game); break;
       case 'import': importInto(i); break;
       case 'export': { const txt = formatPaste(i); root.querySelector(`#calc-io-text-${i}`).value = txt; root.querySelector(`#calc-io-msg-${i}`).textContent = txt ? 'Exported.' : 'Nothing to export yet.'; break; }
     }
