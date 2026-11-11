@@ -426,14 +426,16 @@ function itemsForGame(vg) {
 }
 
 const MEGA_STONE_CATEGORIES = new Set(['Mega Evolution', 'mega-stones']);
-const MEGA_NAME_RE = /\b(?:An?|A special)\s+([A-Z][a-zA-Z0-9'.]*(?:[- ][A-Z][a-zA-Z0-9'.]*)*)\s+(?:holding|to Mega Evolve)/;
+// Newer stones are described as "A held item that allows Salamence to Mega Evolve."
+const MEGA_ALLOWS_RE = /allows\s+([A-Z][a-zA-Z0-9'.]*(?:[- ][A-Z][a-zA-Z0-9'.]*)*)\s+to Mega Evolve/;
+const MEGA_NAME_RE =/\b(?:An?|A special)\s+([A-Z][a-zA-Z0-9'.]*(?:[- ][A-Z][a-zA-Z0-9'.]*)*)\s+(?:holding|to Mega Evolve)/;
 
 // Given a held item's catalog info, figure out which base Pokémon (species) it Mega Evolves,
 // by parsing the item's own effect text (e.g. "A Charizard holding this stone..." or "Allows
 // Gengar to Mega Evolve into Mega Gengar."). Both catalogs phrase it this way.
 function megaStoneBaseSlug(itemInfo) {
   if (!itemInfo || !MEGA_STONE_CATEGORIES.has(itemInfo.category)) return null;
-  const match = itemInfo.effect.match(MEGA_NAME_RE);
+  const match = itemInfo.effect.match(MEGA_NAME_RE) || itemInfo.effect.match(MEGA_ALLOWS_RE);
   if (!match) return null;
   return slugify(match[1]);
 }
@@ -445,9 +447,9 @@ function findMegaVariant(baseSlug, itemDisplayName, fullPokemonList) {
   const candidates = fullPokemonList.filter(p => p.name === `${baseSlug}-mega` || p.name.startsWith(`${baseSlug}-mega-`));
   if (candidates.length <= 1) return candidates[0] || null;
   const upper = itemDisplayName.toUpperCase();
-  if (/\bY$/.test(upper)) return candidates.find(p => p.name.endsWith('-mega-y')) || candidates[0];
-  if (/\bX$/.test(upper)) return candidates.find(p => p.name.endsWith('-mega-x')) || candidates[0];
-  return candidates[0];
+  const letter = upper.match(/\s([A-Z])$/);   // "Charizardite Y", "Garchompite Z"
+  if (letter) return candidates.find(p => p.name.endsWith('-mega-' + letter[1].toLowerCase())) || candidates[0];
+  return candidates.find(p => p.name === `${baseSlug}-mega`) || candidates[0];
 }
 
 // ---------- Per-game Pokémon data ----------

@@ -70,7 +70,7 @@
   const defaultState = () => ({ game: CHAMPIONS_VG, format: 'doubles', phase: 'setup', teamId: null, myTeam: [], foe: [0, 1, 2, 3, 4, 5].map(() => ({ name: null })), leadsMine: [], backMine: [], leadsFoe: [], log: [] });
   let S = defaultState();
   const sim = { ready: false, roster: [], rosterMap: new Map(), extras: new Map(), loading: false, error: null };
-  const UI = { composer: null, cell: null, edit: null, openPicker: null, matrix: null, matrixKey: '', inferCache: null, msg: '' };
+  const UI = { megaClosed: new Set(), composer: null, cell: null, edit: null, openPicker: null, matrix: null, matrixKey: '', inferCache: null, msg: '' };
   let root = null;
 
   const isChamp = () => S.game === CHAMPIONS_VG;
@@ -126,27 +126,40 @@
     return priorsCache.get(k);
   }
   // ----- Mega Evolution -----
-  // p.mega is tri-state: a Mega's name (chosen), false (explicitly not Mega) or null (automatic).
-  // Automatic = assume it Mega Evolves when it holds its Mega Stone (yours), or when its Mega Stone is by far
-  // the most-used item (opponents) — those players almost always Mega Evolve.
-  const MEGA_ASSUME = 0.6;
+  // p.mega is the name of the Mega form a Pokémon has Mega Evolved into, or null/false if it hasn't. Nothing is ever
+  // assumed: the user taps "Mega Evolve" (an event in the log) when it happens. Until then, Mega-capable Pokémon get
+  // an extra "if it Mega Evolves" set of numbers, and only one Pokémon per side can Mega Evolve per battle.
   function stoneVariant(baseName, itemSlug) {
     if (!itemSlug) return null;
     const it = itemsForGame(S.game).find(x => x.slug === itemSlug);
     const base = it ? megaStoneBaseSlug(it) : null;
     return base && base === baseName ? findMegaVariant(base, it.name, sim.roster) : null;
   }
-  function effMega(side, i, p) {
-    if (p && p.mega) return p.mega;
-    if (p && p.mega === false) return null;
-    if (side === 'mine') { const v = stoneVariant(S.myTeam[i].pokemonName, S.myTeam[i].item); return v ? v.name : null; }
-    const baseName = S.foe[i].name; if (!baseName) return null;
-    const know = p ? p.know : null;
-    if (know && know.itemKnown) { const v = stoneVariant(baseName, know.item); return v ? v.name : null; }
-    const pri = priorsFor(baseName), top = pri ? pri.items.slice().sort((a, b) => b.p - a.p)[0] : null;
-    if (top && top.p >= MEGA_ASSUME) { const v = stoneVariant(baseName, top.slug); return v ? v.name : null; }
-    return null;
+  const effMega = (side, i, p) => (p && p.mega) || null;
+  const megaVariantsOf = base => sim.roster.filter(p => p.name === `${base}-mega` || p.name.startsWith(`${base}-mega-`));
+  /** Slug of the Mega Stone that unlocks a given Mega form (used as the held item for what-if numbers). */
+  const stoneSlugCache = new Map();
+  function stoneSlugFor(baseName, variantName) {
+    const k = S.game + '|' + variantName;
+    if (!stoneSlugCache.has(k)) {
+      const hit = itemsForGame(S.game).find(it => { const b = megaStoneBaseSlug(it); if (b !== baseName) return false; const v = findMegaVariant(b, it.name, sim.roster); return v && v.name === variantName; });
+      stoneSlugCache.set(k, hit ? hit.slug : null);
+    }
+    return stoneSlugCache.get(k);
   }
+  const sideMegaUsed = (st, side) => (side === 'mine' ? st.mine : st.foe).some(p => !!p.mega);
+  /** Mega forms this Pokémon could still Mega Evolve into right now (none once its side has used its Mega). */
+  function megaChoices(st, side, i) {
+    const p = side === 'mine' ? st.mine[i] : st.foe[i];
+    if (!p || p.mega || p.fainted || sideMegaUsed(st, side)) return [];
+    if (side === 'mine') { const v = stoneVariant(S.myTeam[i].pokemonName, S.myTeam[i].item); return v ? [v] : []; }
+    const base = S.foe[i].name; if (!base) return [];
+    if (p.know.itemKnown) { const v = stoneVariant(base, p.know.item); return v ? [v] : []; }
+    const pri = priorsFor(base);
+    const usage = v => { const slug = stoneSlugFor(base, v.name), it = pri && slug ? pri.items.find(x => x.slug === slug) : null; return it ? it.p : 0; };
+    return megaVariantsOf(base).sort((a, b) => usage(b) - usage(a));
+  }
+  const withMega = (p, v) => Object.assign({}, p, { mega: v.name });
   function foePri(i, fs) { const m = effMega('foe', i, fs); return (m && priorsFor(m)) || priorsFor(S.foe[i].name); }
 
   function engineField(st, attackerSide, fast) {
@@ -187,6 +200,8 @@
     const know = { itemKnown: fs.know.itemKnown, item: fs.know.item, abilityKnown: fs.know.abilityKnown, ability: fs.know.ability, map: inf && inf.map ? inf.map : null };
     const b = SimEngine.scenarioBuild(mon.stats, pri, know, scenario === 'prior' ? 'likely' : scenario, key, mon, isChamp());
     if (effMega('foe', i, fs) && mon.abilities[0] && !fs.know.abilityKnown) b.ability = mon.abilities[0].name;
+    // a Mega always holds its Mega Stone
+    if (effMega('foe', i, fs) && !fs.know.itemKnown) b.item = stoneSlugFor(S.foe[i].name, fs.mega) || b.item;
     const spec = {
       label: monDisplayName(mon), types: mon.types, base: mon.stats, level: level(), nature: b.nature, sp: b.sp, ability: b.ability, item: b.item, status: fs.status,
       hpPct: fs.hpPct, boosts: fs.boosts, canEvolve: !mon.isFinalEvolution, weight: mon.weight, tailwind: conds ? conds.tailwind : false,
@@ -314,7 +329,12 @@
         if (ev.what === 'hp') { if (ev.side === 'mine') { p.hp = clamp(ev.value, 0, maxHpOf(ev.i, st)); } else p.hpPct = clamp(ev.value, 0, 100); p.fainted = (ev.side === 'mine' ? p.hp : p.hpPct) <= 0; if (p.fainted) p.active = false; }
         else if (ev.what === 'status') p.status = ev.value;
         else if (ev.what === 'boost') p.boosts[ev.key] = clamp(ev.value, -6, 6);
-        else if (ev.what === 'mega') { p.mega = ev.value === undefined ? null : ev.value; }
+        else if (ev.what === 'mega') {
+          const before = p.active ? abilityOfActive(st, ev.side, ev.i) : null;
+          p.mega = ev.value || null;
+          // Mega abilities (Drought, Intimidate, ...) trigger as it Mega Evolves
+          if (p.mega && p.active && abilityOfActive(st, ev.side, ev.i) !== before) { autoField(st, ev.side, ev.i); autoIntimidate(st, ev.side, ev.i); }
+        }
         else if (ev.what === 'field') { st.field[ev.key] = ev.value; delete st.timers['f:' + ev.key]; }
         else if (ev.what === 'cond') { st.side[ev.side].conds[ev.key] = ev.value; delete st.timers[`c:${ev.side}:${ev.key}`]; }
         else if (ev.what === 'revive') { p.fainted = false; }
@@ -587,7 +607,8 @@
     const slot = S.myTeam[i], ms = st.mine[i], mon = mineMonOf(i, ms), m = mineEngine(i, ms, st.side.mine.conds);
     const pct = ms.hp / m.stats.hp * 100;
     const editing = UI.edit && UI.edit.side === 'mine' && UI.edit.i === i;
-    const moveRows = (slot.moves || []).filter(Boolean).map(slug => {
+    // rows of "my move → each opposing Pokémon" for a given attacker form; foeMega adds the numbers vs. an opponent that could still Mega Evolve
+    const moveRowsFor = (m, foeMega) => (slot.moves || []).filter(Boolean).map(slug => {
       const em = engMove(slug); if (em.category === 'status') return `<div class="sm-move"><span class="mvchip" style="background:${typeColor(em.type)}">${esc(formatName(slug))}</span><span class="sm-dim">status</span></div>`;
       const cols = actF.map(j => {
         const fs = st.foe[j], key = em.category === 'physical' ? 'defense' : 'special-defense';
@@ -599,9 +620,27 @@
         // if one of their possible abilities would make this move do nothing (Levitate vs Ground, Flash Fire vs Fire, ...), say so
         const risks = fs.know.abilityKnown ? [] : SimEngine.immunityRisks(foeAbilityOdds(j, fs, infer[j]), em.type);
         const riskTxt = risks.length ? `<small class="sm-risk" title="Possible ability that would make this move do nothing">immune if ${risks.map(r => `${esc(formatName(r.slug))} ${Math.round(r.p * 100)}%`).join(' / ')}</small>` : '';
-        return `<span class="sm-res" title="vs ${esc(tgt)}: likely ${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%, no investment up to ${fmtPct(lo.pctMax)}%, max bulk down to ${fmtPct(hi.pctMin)}%"><em class="sm-tg tf">${esc(tgt)}</em><b>${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%</b><i class="${b.cls}">${b.t}</i><small>${fmtPct(hi.pctMin)}–${fmtPct(lo.pctMax)}%</small>${riskTxt}</span>`;
+        // if that opponent could still Mega Evolve, its bulk (and so these numbers) would change
+        const megaTxt = !foeMega ? '' : megaChoices(st, 'foe', j).map(v => {
+          const mi = infer[j] ? { map: infer[j].map } : null;
+          const r = SimEngine.moveResult(m, foeEngine(foeSpec(j, withMega(fs, v), st.side.foe.conds, mi, 'likely', key)), em, engineField(st, 'mine'));
+          const mb = koBadge(r, fs.hpPct);
+          return `<small class="sm-mega-line" title="If it Mega Evolves into ${esc(monDisplayName(v))}">vs ${esc(monDisplayName(v))} <b>${fmtPct(r.pctMin)}–${fmtPct(r.pctMax)}%</b> <i class="${mb.cls}">${mb.t}</i></small>`;
+        }).join('');
+        return `<span class="sm-res" title="vs ${esc(tgt)}: likely ${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%, no investment up to ${fmtPct(lo.pctMax)}%, max bulk down to ${fmtPct(hi.pctMin)}%"><em class="sm-tg tf">${esc(tgt)}</em><b>${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%</b><i class="${b.cls}">${b.t}</i><small>${fmtPct(hi.pctMin)}–${fmtPct(lo.pctMax)}%</small>${riskTxt}${megaTxt}</span>`;
       }).join('');
       return `<div class="sm-move"><span class="mvchip" style="background:${typeColor(em.type)}">${esc(formatName(slug))}</span>${cols || '<span class="sm-dim">no target</span>'}</div>`;
+    }).join('');
+    const moveRows = moveRowsFor(m, true);
+    // what-if: the same moves if this Pokémon Mega Evolves (only while its side still can)
+    const megaBoxes = megaChoices(st, 'mine', i).map(v => {
+      const mM = mineEngine(i, withMega(ms, v), st.side.mine.conds), key = `mine:${i}:${v.name}`, closed = UI.megaClosed.has(key);
+      return `<div class="sm-megabox"><div class="sm-mega-head"><b>Mega Evolve → ${esc(monDisplayName(v))}</b>
+        <span class="sm-types">${v.types.map(tbadge).join('')}</span>
+        <span class="sm-dim">${esc(formatName(mM.ability || '—'))} · Spe ${mM.speedFinal} <small>(now ${m.speedFinal})</small></span>
+        <span class="sm-mega-actions"><button type="button" class="sm-go sm-mega-btn" data-act="mega" data-side="mine" data-i="${i}" data-mega="${esc(v.name)}">Mega Evolve</button>
+        <button type="button" class="sm-linkbtn" data-act="mega-toggle" data-key="${esc(key)}">${closed ? 'Show numbers' : 'Hide numbers'}</button></span></div>
+        ${closed ? '' : `<div class="sm-moves"><div class="sm-dim">Your moves as ${esc(monDisplayName(v))}</div>${moveRowsFor(mM, false) || '<div class="sm-dim">No moves on this set.</div>'}</div>`}</div>`;
     }).join('');
     const stone = (() => { const it = slot.item ? itemsForGame(S.game).find(x => x.slug === slot.item) : null; const base = it ? megaStoneBaseSlug(it) : null; return base && base === slot.pokemonName ? findMegaVariant(base, it.name, sim.roster) : null; })();
     return `<div class="sm-mon side-a${ms.fainted ? ' fainted' : ''}">
@@ -609,8 +648,9 @@
         <div><b>${esc(slot.nickname || monDisplayName(mon))}</b><div class="sm-types">${mon.types.map(tbadge).join('')}</div>
         <div class="sm-dim">${esc(formatName(m.ability || '—'))} · ${esc(slot.item ? formatName(slot.item) : 'no item')}</div></div></div>
       <div class="sm-hp"><div class="hp-track"><div class="hp-fill ${pct <= 20 ? 'low' : pct <= 50 ? 'mid' : 'ok'}" style="width:${pct}%"></div></div><span>${ms.hp} / ${m.stats.hp} HP (${Math.round(pct)}%)</span></div>
-      <div class="sm-stagerow">${stagesHtml('mine', i, ms.boosts)}${statusChip(ms.status)}${effMega('mine', i, ms) ? `<span class="sm-stage up">${ms.mega ? 'Mega' : 'Mega (assumed)'}</span>` : ''}<span class="sm-dim">Spe ${m.speedFinal}</span></div>
+      <div class="sm-stagerow">${stagesHtml('mine', i, ms.boosts)}${statusChip(ms.status)}${ms.mega ? '<span class="sm-stage up">Mega Evolved</span>' : ''}<span class="sm-dim">Spe ${m.speedFinal}</span></div>
       <div class="sm-moves"><div class="sm-dim">Your moves — damage to each opposing Pokémon <small>(likely · range across possible bulk)</small></div>${moveRows || '<div class="sm-dim">No moves on this set.</div>'}</div>
+      ${megaBoxes}
       <button type="button" class="sm-linkbtn" data-act="edit" data-side="mine" data-i="${i}">${editing ? 'Close overrides' : 'Override…'}</button>${editing ? overrideHtml('mine', i, st, stone) : ''}</div>`;
   }
 
@@ -636,23 +676,43 @@
     const itemChips = items.filter(x => x.slug && (x.p >= 0.01 || (fs.know.itemKnown && fs.know.item === x.slug))).map(x => `<button type="button" class="sm-chip${fs.know.itemKnown && fs.know.item === x.slug ? ' on' : ''}" data-act="lock-item" data-i="${j}" data-item="${esc(x.slug)}" title="Click to lock as their item">${esc(formatName(x.slug))} <i>${Math.round(x.p * 100)}%</i></button>`).join('') +
       `<button type="button" class="sm-chip${fs.know.itemKnown && !fs.know.item ? ' on' : ''}" data-act="lock-item" data-i="${j}" data-item="">none / unknown</button>`;
     const revealed = fs.revealed.map(s => `<span class="mvchip" style="background:${typeColor((moveDetails.get(s) || {}).type)}">${esc(formatName(s))}</span>`).join('');
-    const mvList = SimEngine.foeMoveList(mon, pri, fs.revealed, 6);
-    const threats = mvList.map(mv => {
+    // rows of "their move → each of my active Pokémon" for a given form of this opponent; myMega adds the numbers vs. one of mine that could still Mega Evolve
+    const threatRowsFor = (fsF, infF, monF, myMega) => SimEngine.foeMoveList(monF, foePri(j, fsF), fs.revealed, 6).map(mv => {
       const em = engMove(mv.slug);
       const key = em.category === 'physical' ? 'attack' : 'special-attack';
       const cols = actM.map(i => {
         const ms = st.mine[i], defM = mineEngine(i, ms, st.side.mine.conds);
-        const likelyM = foeEngine(foeSpec(j, fs, st.side.foe.conds, inf, 'likely', key));
-        const worstM = foeEngine(foeSpec(j, fs, st.side.foe.conds, inf, 'maxOff', key));
+        const likelyM = foeEngine(foeSpec(j, fsF, st.side.foe.conds, infF, 'likely', key));
+        const worstM = foeEngine(foeSpec(j, fsF, st.side.foe.conds, infF, 'maxOff', key));
         const rl = SimEngine.moveResult(likelyM, defM, em, engineField(st, 'foe'));
         const rw = SimEngine.moveResult(worstM, defM, em, engineField(st, 'foe', true));
         const rem = ms.hp / defM.stats.hp * 100;
         const b = koBadge(rl, rem), bw = koBadge(rw, rem);
         const show = b.cls !== 'none' ? b : (bw.cls === 'ko1' || bw.cls === 'ko1p' ? { t: 'KO with max', cls: 'ko1p' } : b);
         const tgt = S.myTeam[i].nickname || monDisplayName(mineMonOf(i, ms));
-        return `<span class="sm-res"><em class="sm-tg tm">${esc(tgt)}</em><b>${fmtPct(rl.pctMin)}–${fmtPct(rl.pctMax)}%</b><i class="${show.cls}">${show.t}</i><small>max ${fmtPct(rw.pctMax)}%</small></span>`;
+        // one of mine could still Mega Evolve: its bulk changes
+        const megaTxt = !myMega ? '' : megaChoices(st, 'mine', i).map(v => {
+          const dM = mineEngine(i, withMega(ms, v), st.side.mine.conds);
+          const r = SimEngine.moveResult(likelyM, dM, em, engineField(st, 'foe'));
+          const mb = koBadge(r, ms.hp / dM.stats.hp * 100);
+          return `<small class="sm-mega-line" title="If your ${esc(tgt)} Mega Evolves into ${esc(monDisplayName(v))}">if ${esc(monDisplayName(v))} <b>${fmtPct(r.pctMin)}–${fmtPct(r.pctMax)}%</b> <i class="${mb.cls}">${mb.t}</i></small>`;
+        }).join('');
+        return `<span class="sm-res"><em class="sm-tg tm">${esc(tgt)}</em><b>${fmtPct(rl.pctMin)}–${fmtPct(rl.pctMax)}%</b><i class="${show.cls}">${show.t}</i><small>max ${fmtPct(rw.pctMax)}%</small>${megaTxt}</span>`;
       }).join('');
       return `<div class="sm-move"><span class="mvchip" style="background:${typeColor(em.type)}">${esc(formatName(mv.slug))}${mv.p ? `<em>${Math.round(mv.p * 100)}%</em>` : ''}</span>${cols}</div>`;
+    }).join('');
+    const threats = threatRowsFor(fs, inf, mon, true);
+    // what-if: this opponent after Mega Evolving (only while its side still can). Observed stats don't carry over (a Mega's stats differ),
+    // so it uses the most likely build narrowed so far.
+    const megaBoxes = megaChoices(st, 'foe', j).map(v => {
+      const fsM = withMega(fs, v), mi = inf ? { map: inf.map } : null, mMon = rosterMon(v.name), key = `foe:${j}:${v.name}`, closed = UI.megaClosed.has(key);
+      const spdM = foeEngine(foeSpec(j, fsM, st.side.foe.conds, mi, 'likely', 'speed'));
+      return `<div class="sm-megabox"><div class="sm-mega-head"><b>If it Mega Evolves → ${esc(monDisplayName(v))}</b>
+        <span class="sm-types">${v.types.map(tbadge).join('')}</span>
+        <span class="sm-dim">${esc(formatName(spdM.ability || '—'))} · Spe ~${spdM.speedFinal}</span>
+        <span class="sm-mega-actions"><button type="button" class="sm-go sm-mega-btn" data-act="mega" data-side="foe" data-i="${j}" data-mega="${esc(v.name)}">It Mega Evolved</button>
+        <button type="button" class="sm-linkbtn" data-act="mega-toggle" data-key="${esc(key)}">${closed ? 'Show numbers' : 'Hide numbers'}</button></span></div>
+        ${closed ? '' : `<div class="sm-moves"><div class="sm-dim">What ${esc(monDisplayName(v))} threatens</div>${threatRowsFor(fsM, mi, mMon, false) || '<div class="sm-dim">No damaging moves known.</div>'}</div>`}</div>`;
     }).join('');
     const editing = UI.edit && UI.edit.side === 'foe' && UI.edit.i === j;
     const megas = sim.roster.filter(p => p.name === `${S.foe[j].name}-mega` || p.name.startsWith(`${S.foe[j].name}-mega-`));
@@ -661,11 +721,12 @@
         <div><b>${esc(monDisplayName(mon))}</b><div class="sm-types">${mon.types.map(tbadge).join('')}</div>
         <div class="sm-dim">${ab ? esc(formatName(ab)) + (abLocked ? ' (locked)' : abOdds.length > 1 ? (abNarrowed ? ' (narrowed)' : ' (likely)') : '') : 'ability unknown'}</div></div></div>
       <div class="sm-hp"><div class="hp-track"><div class="hp-fill ${fs.hpPct <= 20 ? 'low' : fs.hpPct <= 50 ? 'mid' : 'ok'}" style="width:${fs.hpPct}%"></div></div><span>${fmtPct(fs.hpPct)}% HP</span></div>
-      <div class="sm-stagerow">${stagesHtml('foe', j, fs.boosts)}${statusChip(fs.status)}${effMega('foe', j, fs) ? `<span class="sm-stage up">${fs.mega ? 'Mega' : 'Mega (assumed)'}</span>` : ''}</div>
+      <div class="sm-stagerow">${stagesHtml('foe', j, fs.boosts)}${statusChip(fs.status)}${fs.mega ? '<span class="sm-stage up">Mega Evolved</span>' : ''}</div>
       ${abChips ? `<div class="sm-block"><div class="sm-dim">Ability ${abNarrowed && !abLocked ? '<small>(odds updated from what you logged)</small>' : abLocked ? '<small>(locked — click again to unlock)</small>' : '<small>(usage odds — click to lock one in)</small>'}</div><div class="sm-chips">${abChips}</div></div>` : ''}
       <div class="sm-block"><div class="sm-dim">Holds</div><div class="sm-chips">${itemChips}</div></div>
       ${revealed ? `<div class="sm-block"><div class="sm-dim">Revealed moves</div><div class="sm-chips">${revealed}</div></div>` : ''}
       <div class="sm-moves"><div class="sm-dim">What they threaten — each of your active Pokémon <small>(likely · max-investment)</small></div>${threats || '<div class="sm-dim">No damaging moves known.</div>'}</div>
+      ${megaBoxes}
       ${narrowHtml(j, inf, mon)}
       <button type="button" class="sm-linkbtn" data-act="edit" data-side="foe" data-i="${j}">${editing ? 'Close overrides' : 'Override…'}</button>${editing ? overrideHtml('foe', j, st, megas) : ''}</div>`;
   }
@@ -703,7 +764,7 @@
     const boosts = BOOST_KEYS.map(k => `<label>${STAT_LABELS[k]}<select data-ov="boost" data-side="${side}" data-i="${i}" data-key="${k}">${[6, 5, 4, 3, 2, 1, 0, -1, -2, -3, -4, -5, -6].map(b => opt(b, b === 0 ? '--' : (b > 0 ? '+' + b : b), (p.boosts[k] || 0) === b)).join('')}</select></label>`).join('');
     let megaSel = '';
     const variants = side === 'foe' ? extra : (extra ? [extra] : []);
-    if (variants && variants.length) megaSel = `<label>Mega<select data-ov="mega" data-side="${side}" data-i="${i}">${opt('auto', 'Automatic', p.mega === null)}${opt('none', 'Not Mega', p.mega === false)}${variants.map(v => opt(v.name, monDisplayName(v), p.mega === v.name)).join('')}</select></label>`;
+    if (variants && variants.length) megaSel = `<label>Mega<select data-ov="mega" data-side="${side}" data-i="${i}">${opt('none', 'Not Mega Evolved', !p.mega)}${variants.map(v => opt(v.name, monDisplayName(v), p.mega === v.name)).join('')}</select></label>`;
     let foeKnow = '';
     if (side === 'foe') {
       const mon = foeMonOf(i, p);
@@ -744,12 +805,22 @@
   function logLine(ev, st) {
     const who = (s, i) => (s === 'mine' ? (S.myTeam[i] ? (S.myTeam[i].nickname || monDisplayName(mineMonOf(i, st.mine[i]))) : '?') : (S.foe[i] && S.foe[i].name ? monDisplayName(foeMonOf(i, st.foe[i])) : '?'));
     if (ev.t === 'move') {
-      const tr = ev.targets.map(t => `${who(t.s, t.i)} ${t.immune ? 'was unaffected' : t.fainted ? 'fainted' : t.lost == null ? '' : t.lost > 0 ? `−${t.lost}${t.s === 'foe' ? '%' : ' HP'}` : t.lost < 0 ? `+${-t.lost}${t.s === 'foe' ? '%' : ' HP'}` : '(no damage)'}`.trim()).join(', ');
+      const tr = ev.targets.map((t, k) => {
+        const before = ev.snap && ev.snap.targets[k] ? (t.s === 'mine' ? ev.snap.targets[k].hp : ev.snap.targets[k].hpPct) : null;
+        const left = t.lost != null && before != null ? Math.max(0, Math.round((before - t.lost) * 10) / 10) : null;
+        const what = t.immune ? 'was unaffected' : t.fainted ? 'fainted' : left == null ? '' : `${left}${t.s === 'foe' ? '% left' : ' HP left'}${t.lost < 0 ? ' (healed)' : ''}`;
+        return `${who(t.s, t.i)} ${what}`.trim();
+      }).join(', ');
       const note = ev.missed ? '' : fieldMoveNote(ev);
       return `<b>${esc(who(ev.actor.s, ev.actor.i))}</b> used ${esc(formatName(ev.move))}${ev.crit ? ' (crit)' : ''}${ev.missed ? ' — missed' : ''}${tr ? ' → ' + esc(tr) : ''}${note ? ` <span class="sm-dim">· ${esc(note)}</span>` : ''}`;
     }
     if (ev.t === 'switch') return `${esc(who(ev.side, ev.out))} → ${esc(who(ev.side, ev.in))} switched in`;
     if (ev.t === 'turn') return `<i>Turn ${ev.n} begins</i>`;
+    if (ev.t === 'set' && ev.what === 'mega') {
+      const baseNm = ev.side === 'mine' ? (S.myTeam[ev.i] ? (S.myTeam[ev.i].nickname || monDisplayName(rosterMon(S.myTeam[ev.i].pokemonName))) : '?') : (S.foe[ev.i] && S.foe[ev.i].name ? monDisplayName(rosterMon(S.foe[ev.i].name)) : '?');
+      const into = ev.value && rosterMon(ev.value);
+      return ev.value ? `<b>${esc(baseNm)}</b> Mega Evolved${into ? ' into ' + esc(monDisplayName(into)) : ''}` : `<span class="sm-dim">Override: ${esc(baseNm)} is not Mega Evolved</span>`;
+    }
     if (ev.t === 'set') {
       const sub = ev.i != null ? ' (' + who(ev.side, ev.i) + ')' : ev.side ? ' (' + (ev.side === 'mine' ? 'your side' : 'their side') + ')' : '';
       return `<span class="sm-dim">Override: ${esc(ev.what)}${esc(sub)}${ev.key ? ' ' + esc(ev.key) : ''} = ${esc(String(ev.value))}</span>`;
@@ -788,14 +859,14 @@
       const canImmune = !isStatus && a.s !== side;
       return `<div class="sm-trow${isOn ? ' on' : ''}">${forced ? `<span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span>`
         : `<label class="chk"><input type="${mode === 'single' ? 'radio' : 'checkbox'}" name="sim-target" data-cmp="target" data-s="${a.s}" data-i="${a.i}"${isOn ? ' checked' : ''}> <span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span></label>`}
-        ${isOn && (showHp || canImmune) ? `<span class="sm-lost">${showHp && !(t && t.immune) ? `<input type="number" step="${mine ? 1 : 0.5}" data-cmp="lost" data-s="${a.s}" data-i="${a.i}" placeholder="${mine ? 'HP lost' : '% lost'}" value="${t.lost ?? ''}"><small>${mine ? 'HP points (negative = healed)' : '% of their HP (negative = healed)'}</small>
+        ${isOn && (showHp || canImmune) ? `<span class="sm-lost">${showHp && !(t && t.immune) ? `<input type="number" min="0" step="${mine ? 1 : 0.5}" data-cmp="left" data-s="${a.s}" data-i="${a.i}" placeholder="${mine ? `HP left (now ${st.mine[a.i].hp})` : `% left (now ${fmtPct(st.foe[a.i].hpPct)})`}" value="${t.left ?? ''}"><small>${mine ? 'HP it has after the move' : 'HP bar % after the move'}</small>
           <label class="chk"><input type="checkbox" data-cmp="faint" data-s="${a.s}" data-i="${a.i}"${t.fainted ? ' checked' : ''}> fainted</label>` : ''}
           ${canImmune ? `<label class="chk" title="It didn't affect the target — reveals an immunity ability like Levitate or Flash Fire"><input type="checkbox" data-cmp="immune" data-s="${a.s}" data-i="${a.i}"${t.immune ? ' checked' : ''}> no effect</label>` : ''}</span>` : ''}</div>`;
     }).join('');
     const prompt = !sel ? '' : mode === 'field' ? `<div class="sm-dim">${esc(fieldMoveSummary(sel, side))} No target needed.</div>`
-      : mode === 'self' ? `<div class="sm-dim">${heals ? 'It heals itself — enter the HP it recovered (as a negative number of HP lost).' : 'It only affects the user — nothing to enter.'}</div>`
+      : mode === 'self' ? `<div class="sm-dim">${heals ? 'It heals itself — enter the HP it has now.' : 'It only affects the user — nothing to enter.'}</div>`
       : mode === 'ally' ? `<div class="sm-dim">Aimed at an ally.</div>`
-      : `<div class="sm-dim">${mode === 'spread' ? 'Hits several Pokémon — untick any it missed.' : 'On whom?'}${showHp ? ` Then enter ${side === 'foe' ? 'the HP your Pokémon lost' : 'the % the opponent lost'}.` : ' Known stat and status changes are applied automatically.'}</div>`;
+      : `<div class="sm-dim">${mode === 'spread' ? 'Hits several Pokémon — untick any it missed.' : 'On whom?'}${showHp ? ` Then enter ${side === 'foe' ? 'the HP your Pokémon has left' : 'the % the opponent has left'}.` : ' Known stat and status changes are applied automatically.'}</div>`;
     const effNote = sel ? esc(effectPreview(sel, side)) : '';
     const hitOpts = em && (sim.extras.get(sel) || {}).maxHits > (sim.extras.get(sel) || {}).minHits ? (() => { const x = sim.extras.get(sel); const o = []; for (let n = x.minHits; n <= x.maxHits; n++) o.push(n); return o; })() : null;
     return `<div class="sm-composer"><div class="sm-comp-title">Turn ${st.turn} · <b class="${side === 'mine' ? 'tm' : 'tf'}">${esc(actorLabel)}</b> used</div>
@@ -843,9 +914,22 @@
 
   function speedLadderHtml(st, infer, actM, actF) {
     const rows = [];
-    actM.forEach(i => { const m = mineEngine(i, st.mine[i], st.side.mine.conds); rows.push({ side: 'mine', label: S.myTeam[i].nickname || monDisplayName(mineMonOf(i, st.mine[i])), lo: m.speedFinal, hi: m.speedFinal, likely: m.speedFinal }); });
+    actM.forEach(i => {
+      const m = mineEngine(i, st.mine[i], st.side.mine.conds); rows.push({ side: 'mine', label: S.myTeam[i].nickname || monDisplayName(mineMonOf(i, st.mine[i])), lo: m.speedFinal, hi: m.speedFinal, likely: m.speedFinal });
+      megaChoices(st, 'mine', i).forEach(v => { const mM = mineEngine(i, withMega(st.mine[i], v), st.side.mine.conds); rows.push({ side: 'mine', mega: true, label: monDisplayName(v), lo: mM.speedFinal, hi: mM.speedFinal, likely: mM.speedFinal }); });
+    });
     actF.forEach(j => {
       const fs = st.foe[j], mon = foeMonOf(j, fs), inf = infer[j], pri = foePri(j, fs);
+      // Mega what-if: the speed stat is re-derived from every Speed value still possible for the current form (same nature + investment, Mega base Speed)
+      megaChoices(st, 'foe', j).forEach(v => {
+        const fsM = withMega(fs, v), likelyMega = foeEngine(foeSpec(j, fsM, st.side.foe.conds, inf ? { map: inf.map } : null, 'likely', 'speed'));
+        const cands = SimEngine.statCandidates(mon.stats.speed, 'speed', isChamp(), level());
+        const ok = inf && inf.ranges.speed && inf.ranges.speed.vals.length ? new Set(inf.ranges.speed.vals) : null;
+        const vals = cands.filter(c => !ok || ok.has(c.val)).map(c => SimEngine.statFromMod(v.stats.speed, 'speed', c.sp, c.mod, isChamp(), level()));
+        if (!vals.length) return;
+        const modM = x => SimEngine.effSpeed(x, fs.boosts.speed, st.side.foe.conds.tailwind, fs.status === 'par', false);
+        rows.push({ side: 'foe', mega: true, label: monDisplayName(v), lo: modM(Math.min(...vals)), hi: modM(Math.max(...vals)), likely: likelyMega.speedFinal, scarf: null });
+      });
       const likelyM = foeEngine(foeSpec(j, fs, st.side.foe.conds, inf, 'likely', 'speed'));
       let lo, hi;
       if (inf && inf.ranges.speed && inf.ranges.speed.vals.length) { lo = inf.ranges.speed.min; hi = inf.ranges.speed.max; }
@@ -860,10 +944,10 @@
     const order = rows.slice().sort((a, b) => b.likely - a.likely);
     const tr = st.field.trickRoom;
     return `<section class="sm-card"><h3>Speed tiers ${tr ? '<span class="sm-stage down">Trick Room</span>' : ''}</h3>
-      ${order.map(r => `<div class="sm-spd"><span class="sm-spd-name ${r.side === 'mine' ? 'tm' : 'tf'}">${esc(r.label)}</span>
+      ${order.map(r => `<div class="sm-spd${r.mega ? ' mega' : ''}"><span class="sm-spd-name ${r.side === 'mine' ? 'tm' : 'tf'}">${r.mega ? 'If ' : ''}${esc(r.label)}</span>
         <div class="sm-spd-track">${r.side === 'foe' ? `<div class="sm-spd-range" style="left:${pos(r.lo)}%;width:${Math.max(0.8, pos(r.hi) - pos(r.lo))}%"></div>${r.scarf ? `<div class="sm-spd-scarf" style="left:${pos(r.scarf.lo)}%;width:${Math.max(0.8, pos(r.scarf.hi) - pos(r.scarf.lo))}%" title="If Choice Scarf (${Math.round(r.scarf.p * 100)}% usage)"></div>` : ''}` : ''}<div class="sm-spd-tick" style="left:${pos(r.likely)}%"></div></div>
-        <span class="sm-spd-val">${r.side === 'mine' ? r.likely : `${r.lo}–${r.hi}`}</span></div>`).join('')}
-      <div class="sm-dim">Bars are possible Speed ranges (with stages, Tailwind and paralysis applied); the tick is the most likely value. Hatched = if Choice Scarf (shown only when it's commonly run).</div></section>`;
+        <span class="sm-spd-val">${r.side === 'mine' || r.lo === r.hi ? r.likely : `${r.lo}–${r.hi}`}</span></div>`).join('')}
+      <div class="sm-dim">Bars are possible Speed ranges (with stages, Tailwind and paralysis applied); the tick is the most likely value. Hatched = if Choice Scarf (shown only when it's commonly run). Faded "If …" rows = after Mega Evolving; they disappear once a Pokémon on that side has Mega Evolved.</div></section>`;
   }
 
   // ---------- actions ----------
@@ -874,7 +958,14 @@
   function addAction() {
     const c = UI.composer; if (!c || !c.move) return;
     const st = replay();
-    const targets = c.targets.map(t => ({ s: t.s, i: t.i, lost: t.immune || t.lost === '' || t.lost == null ? null : Number(t.lost), fainted: !!t.fainted && !t.immune, immune: !!t.immune }));
+    // The user enters what's LEFT (what the game shows); the event stores the change, which is what the narrowing needs.
+    const targets = c.targets.map(t => {
+      const r = { s: t.s, i: t.i, lost: null, fainted: !!t.fainted && !t.immune, immune: !!t.immune };
+      if (r.immune || r.fainted || t.left === '' || t.left == null) return r;
+      const before = t.s === 'mine' ? st.mine[t.i].hp : st.foe[t.i].hpPct;
+      r.lost = Math.round((before - Number(t.left)) * 10) / 10;
+      return r;
+    });
     const ev = { t: 'move', turn: st.turn, actor: { s: c.side, i: c.i }, move: c.move, crit: !!c.crit, missed: !!c.missed, hits: c.hits || 0, targets, snap: captureSnap(st, { s: c.side, i: c.i }, targets) };
     pushEvent(ev); UI.composer = null; render();
   }
@@ -889,7 +980,7 @@
     c.move = slug || null; c.targets = [];
     if (slug) {
       const st = replay(), mode = targetMode(slug), opp = c.side === 'mine' ? 'foe' : 'mine', ex = sim.extras.get(slug) || {};
-      const opps = activeIdx(st, opp), allies = activeIdx(st, c.side).filter(k => k !== c.i), mk = (s, k) => ({ s, i: k, lost: '' });
+      const opps = activeIdx(st, opp), allies = activeIdx(st, c.side).filter(k => k !== c.i), mk = (s, k) => ({ s, i: k, left: '' });
       if (mode === 'self') c.targets = (ex.flags || []).includes('heal') ? [mk(c.side, c.i)] : [];
       else if (mode === 'ally') c.targets = allies.length === 1 ? [mk(c.side, allies[0])] : [];
       else if (mode === 'spread') { c.targets = opps.map(k => mk(opp, k)); if (ex.target === 'all-other-pokemon') allies.forEach(k => c.targets.push(mk(c.side, k))); }
@@ -946,6 +1037,8 @@
         const fs = replay().foe[i], same = fs.know.abilityKnown && fs.know.ability === d.ab;
         pushEvent({ t: 'know', i, what: 'ability', value: same ? null : d.ab, locked: !same }); render(); break;
       }
+      case 'mega': pushEvent({ t: 'set', what: 'mega', side: d.side, i, value: d.mega }); render(); break;
+      case 'mega-toggle': if (UI.megaClosed.has(d.key)) UI.megaClosed.delete(d.key); else UI.megaClosed.add(d.key); render(); break;
       case 'revive': pushEvent({ t: 'set', what: 'revive', side: d.side, i }); render(); break;
       case 'sendout': sendOut(d.side, i); break;
     }
@@ -975,7 +1068,7 @@
       case 'hp': pushEvent({ t: 'set', what: 'hp', side, i, value: Number(t.value) }); break;
       case 'status': pushEvent({ t: 'set', what: 'status', side, i, value: t.value }); break;
       case 'boost': pushEvent({ t: 'set', what: 'boost', side, i, key, value: Number(t.value) }); break;
-      case 'mega': pushEvent({ t: 'set', what: 'mega', side, i, value: t.value === 'auto' ? null : t.value === 'none' ? false : t.value }); break;
+      case 'mega': pushEvent({ t: 'set', what: 'mega', side, i, value: t.value === 'none' || t.value === 'auto' ? null : t.value }); break;
       case 'ability': pushEvent({ t: 'know', i, what: 'ability', value: t.value || null, locked: !!t.value }); break;      case 'field': pushEvent({ t: 'set', what: 'field', key, value: t.value }); break;
       case 'field-t': pushEvent({ t: 'set', what: 'field', key, value: t.checked }); break;
       case 'cond': pushEvent({ t: 'set', what: 'cond', side, key, value: t.checked }); break;
@@ -995,15 +1088,15 @@
     else if (k === 'move-text') {
       const slug = slugify(t.value); if (moveDetails.has(slug)) setMove(slug);
     } else if (k === 'target') {
-      const nt = { s: t.dataset.s, i: +t.dataset.i, lost: '' };
+      const nt = { s: t.dataset.s, i: +t.dataset.i, left: '' };
       if (t.checked) { if (targetMode(c.move) === 'single') c.targets = [nt]; else c.targets.push(nt); }
       else c.targets = c.targets.filter(x => !(x.s === t.dataset.s && x.i === +t.dataset.i));
       render();
     } else if (k === 'immune') {
       const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i);
-      if (tg) { tg.immune = t.checked; if (t.checked) { tg.lost = ''; tg.fainted = false; } }
+      if (tg) { tg.immune = t.checked; if (t.checked) { tg.left = ''; tg.fainted = false; } }
       render();
-    } else if (k === 'lost') { const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i); if (tg) tg.lost = t.value; }
+    } else if (k === 'left') { const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i); if (tg) tg.left = t.value; }
     else if (k === 'faint') { const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i); if (tg) tg.fainted = t.checked; }
     else if (k === 'crit') c.crit = t.checked;
     else if (k === 'missed') c.missed = t.checked;
@@ -1012,7 +1105,7 @@
   function onInput(e) {
     const t = e.target;
     if (t.matches('[data-picker="foe"]')) { openPicker(t); return; }
-    if (t.dataset.cmp === 'lost') composerChange(t);
+    if (t.dataset.cmp === 'left') composerChange(t);
     if (t.dataset.cmp === 'move-text') { const slug = slugify(t.value); if (moveDetails.has(slug) && UI.composer && UI.composer.move !== slug) { setMove(slug); } }
   }
 
@@ -1051,8 +1144,16 @@
     root.querySelector('#sim-game-select').addEventListener('change', e => applyGame(e.target.value, false));
   }
 
+  /** If the chosen team was edited in the Team Builder (same Pokémon, new items/moves/spreads), pick the changes up. */
+  function syncTeam() {
+    const t = S.teamId && (typeof teams !== 'undefined' ? teams : []).find(x => x.id === S.teamId); if (!t) return;
+    const fresh = t.slots.filter(Boolean).map(sl => clone(sl));
+    if (fresh.length !== S.myTeam.length || !fresh.every((sl, k) => sl.pokemonName === S.myTeam[k].pokemonName)) return;
+    if (JSON.stringify(fresh) === JSON.stringify(S.myTeam)) return;
+    S.myTeam = fresh; UI.matrix = null; UI.inferCache = null; save();
+  }
   async function onShown() {
-    if (sim.ready) { render(); return; }
+    if (sim.ready) { syncTeam(); render(); return; }
     sim.ready = true;
     root = document.getElementById('sim-view');
     buildShell(); restore(); setModeToggle();
@@ -1060,6 +1161,7 @@
     root.addEventListener('focusin', e => { if (e.target.matches && e.target.matches('[data-picker="foe"]')) { e.target.select(); openPicker(e.target); } });
     document.addEventListener('click', e => { if (root && !e.target.closest('.calc-picker')) root.querySelectorAll('.option-dropdown.open').forEach(d => d.classList.remove('open')); });
     await applyGame(S.game, true);
+    syncTeam(); render();
   }
 
   window.onSimViewShown = onShown;

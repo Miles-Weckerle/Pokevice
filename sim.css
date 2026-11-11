@@ -118,7 +118,7 @@
 .sm-fld { display: flex; flex-direction: column; gap: 4px; position: relative; } .sm-fld > span { font-size: 10px; text-transform: uppercase; letter-spacing: .8px; color: var(--text-dim); }
 .sm-log { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .sm-log-line { padding: 4px 8px; background: var(--panel-alt); border-radius: 8px; } .sm-log-line.t-turn { background: none; color: var(--text-dim); border-top: 1px solid var(--border); border-radius: 0; margin-top: 4px; }
-.sm-spd { display: grid; grid-template-columns: 110px 1fr 70px; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }
+.sm-spd { display: grid; grid-template-columns: 140px 1fr 70px; align-items: center; gap: 8px; margin: 5px 0; font-size: 12px; }
 .sm-spd-name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .sm-spd-val { text-align: right; font-variant-numeric: tabular-nums; }
 .sm-spd-track { position: relative; height: 14px; background: #23252f; border-radius: 7px; }
 .sm-spd-range { position: absolute; top: 3px; bottom: 3px; background: color-mix(in srgb, var(--side-b) 55%, transparent); border-radius: 4px; }
@@ -131,3 +131,16 @@
 .sm-timers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .sm-timers .sm-chip { cursor: default; } .sm-timers .sm-chip b { font-weight: 600; }
 .sm-block small { color: var(--text-dim); font-size: 11px; }
+
+/* ---- Mega Evolution what-ifs ---- */
+.sm-megabox { margin-top: 10px; padding: 8px 10px; border: 1px dashed color-mix(in srgb, var(--accent, #7aa2ff) 55%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--accent, #7aa2ff) 7%, transparent); }
+.sm-mega-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; }
+.sm-mega-head > b { font-size: 13px; }
+.sm-mega-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; }
+.sm-mega-btn { padding: 4px 10px; font-size: 12px; }
+.sm-megabox .sm-moves { margin-top: 6px; }
+.sm-mega-line { display: block; flex-basis: 100%; margin-left: 4px; font-size: 11px; color: var(--text-dim); }
+.sm-mega-line b { color: var(--text); font-variant-numeric: tabular-nums; }
+.sm-res { flex-wrap: wrap; }
+.sm-spd.mega { opacity: .65; }
+.sm-spd.mega .sm-spd-name { font-style: italic; }

@@ -95,6 +95,21 @@ function Parse-Entry($slug) {
   return [pscustomobject]@{ dex = $dexJson; usage = (Get-Usage $u $name) }
 }
 
+# ---------- item catalog (one page lists every item) ----------
+function Get-ItemCatalog {
+  $html = Get-Page 'https://pokebase.app/pokemon-champions/items'
+  $u = $html.Replace('\"', '"')
+  $cats = @{ 'held-item' = 'Held Item'; 'berry' = 'Berry'; 'mega-evolution' = 'Mega Evolution' }
+  $out = [ordered]@{}
+  foreach ($m in [regex]::Matches($u, '\{"id":"[0-9a-f]{24}","name":"([^"]+)","slug":"([a-z0-9-]+)","description":"((?:[^"\\]|\\.)*)","iconUrl":"[^"]*","iconSize":\d+,"pocket":"([a-z-]+)"')) {
+    $slug = $m.Groups[2].Value; if ($out.Contains($slug)) { continue }
+    $pocket = $m.Groups[4].Value
+    $cat = if ($cats.ContainsKey($pocket)) { $cats[$pocket] } else { (($pocket -split '-' | ForEach-Object { if ($_) { $_.Substring(0, 1).ToUpper() + $_.Substring(1) } }) -join ' ') }
+    $out[$slug] = [ordered]@{ displayName = (Decode $m.Groups[1].Value); category = $cat; effect = (Decode ($m.Groups[3].Value.Replace('\n', ' '))) }
+  }
+  return $out
+}
+
 # ---------- ranked-ladder usage (same page, no extra requests) ----------
 $inv = [System.Globalization.CultureInfo]::InvariantCulture
 function Fmt-Pct($s) { [string]::Format($inv, '{0}%', [double]::Parse($s, $inv)) }
@@ -240,6 +255,17 @@ if (-not $Only) { foreach ($k in @($usageMerged.Keys | Where-Object { $slugs -no
 if (-not $Only -and $existingUsage.Count -gt 0 -and $usageMerged.Count -lt [Math]::Floor($existingUsage.Count * 0.9)) { throw 'usage entry count collapsed; not writing' }
 if (-not $Only -and $usageResults.Count -lt 100) { throw "only $($usageResults.Count) pages had usage data; the page format may have changed. Not writing." }
 if ($usageMerged.Contains('incineroar') -and $usageMerged['incineroar'] -notmatch '"Fake Out"') { throw 'usage canary failed: Incineroar usage has no Fake Out; not writing' }
+
+# Items: a failure here only skips the items file; it must never block the Pokémon/usage data.
+$itemCatalog = $null
+if (-not $Only) {
+  try {
+    $itemCatalog = Get-ItemCatalog
+    foreach ($req in 'focus-sash', 'sitrus-berry', 'life-orb', 'choice-scarf') { if (-not $itemCatalog.Contains($req)) { throw "canary item '$req' missing" } }
+    if ($itemCatalog.Count -lt 120) { throw "only $($itemCatalog.Count) items parsed" }
+    "Items: $($itemCatalog.Count) parsed"
+  } catch { Write-Host "Items skipped: $($_.Exception.Message)"; $itemCatalog = $null }
+}
 if ($DryRun) { 'Dry run: nothing written.'; return }
 
 $lines = @($merged.Keys | ForEach-Object { '"' + $_ + '": ' + $merged[$_] })
@@ -254,3 +280,9 @@ $usageJson = "{`n" + ($usageLines -join ",`n") + "`n}`n"
 [System.IO.File]::WriteAllText($usageJsonPath, $usageJson, (New-Object System.Text.UTF8Encoding($false)))
 [System.IO.File]::WriteAllText($usageJsPath, ('window.POKEBASE_USAGE_DATA = ' + ($usageJson.TrimEnd() -replace "`n", ' ') + ' ;'), $utf8Bom)
 "Wrote $($usageMerged.Count) usage entries."
+
+if ($itemCatalog) {
+  $itemsJs = 'window.CHAMPIONS_ITEMS_DATA = ' + (($itemCatalog | ConvertTo-Json -Compress -Depth 4).Replace(([string][char]92 + 'u0027'), [string][char]39)) + ';'
+  [System.IO.File]::WriteAllText((Join-Path (Split-Path -Parent $dir) 'champions-items.data.js'), $itemsJs, $utf8Bom)
+  "Wrote $($itemCatalog.Count) items."
+}
