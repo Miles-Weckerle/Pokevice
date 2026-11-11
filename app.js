@@ -623,8 +623,11 @@ let championsDex = null; // Map<pokeApiSlug, {displayName, types, stats, abiliti
 // makes Champions mode work without needing serve.ps1 / start.bat running.
 async function loadChampionsUsage() {
   if (championsUsage) return championsUsage;
-  if (!window.CHAMPIONS_USAGE_DATA) throw new Error('Champions usage data script (champions-usage.data.js) did not load.');
-  championsUsage = new Map(Object.entries(window.CHAMPIONS_USAGE_DATA));
+  const older = window.CHAMPIONS_USAGE_DATA || {};       // championsbattledata.com export (fallback)
+  const fresh = window.POKEBASE_USAGE_DATA || {};        // pokebase.app ranked-ladder usage (refreshed weekly)
+  if (!Object.keys(older).length && !Object.keys(fresh).length) throw new Error('Champions usage data scripts did not load.');
+  championsUsage = new Map(Object.entries(older));
+  for (const [slug, info] of Object.entries(fresh)) championsUsage.set(slug, info);   // newer data wins
   return championsUsage;
 }
 
@@ -1347,7 +1350,7 @@ function renderChampionsSection(mon) {
   </tr>`).join('');
 
   return `<div class="modal-section">
-    <h3>Champions Battle Data <span class="hint">— real usage stats via championsbattledata.com</span></h3>
+    <h3>Champions Battle Data <span class="hint">— ${mon.champions.source === 'pokebase' ? `ranked ladder usage${mon.champions.season ? `, season ${escapeHtml(mon.champions.season)}` : ''}, via pokebase.app` : 'real usage stats via championsbattledata.com'}</span></h3>
     <div>${tabBtn('singles', 'Singles')}${tabBtn('doubles', 'Doubles')}</div>
 
     <div class="modal-section">
