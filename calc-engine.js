@@ -310,7 +310,7 @@ const CalcEngine = (() => {
     if (aAbility === 'fire-mane' && moveType === 'fire') { atMods.push(6144); aTags.push('Fire Mane'); }
     if (aAbility === 'water-bubble' && moveType === 'water') { atMods.push(8192); aTags.push('Water Bubble'); }
     if (aAbility === 'steelworker' && moveType === 'steel') { atMods.push(6144); aTags.push('Steelworker'); }
-    if (aAbility === 'dragon-s-maw' && moveType === 'dragon') { atMods.push(6144); aTags.push("Dragon's Maw"); }
+    if (aAbility === 'dragons-maw' && moveType === 'dragon') { atMods.push(6144); aTags.push("Dragon's Maw"); }
     if (aAbility === 'transistor' && moveType === 'electric') { atMods.push(5325); aTags.push('Transistor'); }
     if (aAbility === 'rocky-payload' && moveType === 'rock') { atMods.push(6144); aTags.push('Rocky Payload'); }
     if (aAbility === 'slow-start' && isPhys && a.flags && a.flags.slowStart) { atMods.push(2048); aTags.push('Slow Start'); }

@@ -126,3 +126,8 @@
 .sm-spd-tick { position: absolute; top: 0; bottom: 0; width: 3px; background: #fff; border-radius: 2px; transform: translateX(-1px); }
 .sm-tg { font-style: normal; font-size: 11px; font-weight: 700; margin-right: 2px; }
 .sm-move { row-gap: 2px; }
+.sm-risk { color: #ffb36e; font-size: 11px; flex-basis: 100%; margin-left: 4px; }
+.sm-effect { font-size: 12px; color: var(--accent); background: var(--panel-alt); border-radius: 8px; padding: 5px 9px; }
+.sm-timers { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.sm-timers .sm-chip { cursor: default; } .sm-timers .sm-chip b { font-weight: 600; }
+.sm-block small { color: var(--text-dim); font-size: 11px; }

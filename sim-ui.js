@@ -22,6 +22,51 @@
   const emptyConds = () => ({ reflect: false, lightScreen: false, auroraVeil: false, friendGuard: false, stealthRock: false, spikes: 0, tailwind: false, helpingHand: false, charge: false, battery: false, powerSpot: false, steelySpirit: false });
   const typeColor = t => TYPE_COLORS[t] || '#777';
 
+  // ----- moves that change the field, and simple deterministic move effects -----
+  // Logging one of these updates the field automatically (with its usual duration); anything unusual can be corrected with an override.
+  const WEATHER_MOVES = { 'sunny-day': 'sun', 'rain-dance': 'rain', sandstorm: 'sand', snowscape: 'snow', hail: 'snow', 'chilly-reception': 'snow' };
+  const TERRAIN_MOVES = { 'electric-terrain': 'electric', 'grassy-terrain': 'grassy', 'misty-terrain': 'misty', 'psychic-terrain': 'psychic' };
+  const ROOM_MOVES = { 'trick-room': 'trickRoom', gravity: 'gravity', 'magic-room': 'magicRoom', 'wonder-room': 'wonderRoom' };
+  // slug -> [condition, whose side ('self' = the user's side, 'opp' = the other side), turns it lasts (0 = until changed)]
+  const SIDE_MOVES = { tailwind: ['tailwind', 'self', 4], reflect: ['reflect', 'self', 5], 'light-screen': ['lightScreen', 'self', 5], 'aurora-veil': ['auroraVeil', 'self', 5],
+    'helping-hand': ['helpingHand', 'self', 1], charge: ['charge', 'self', 0], 'stealth-rock': ['stealthRock', 'opp', 0] };
+  const CLEARS_OWN_HAZARDS = new Set(['rapid-spin', 'mortal-spin', 'tidy-up']);
+  const BREAKS_SCREENS = new Set(['brick-break', 'psychic-fangs', 'raging-bull']);
+  const isFieldMove = s => !!(WEATHER_MOVES[s] || TERRAIN_MOVES[s] || ROOM_MOVES[s] || SIDE_MOVES[s] || s === 'spikes' || s === 'defog' || CLEARS_OWN_HAZARDS.has(s));
+  // self: stage changes on the user; target: stage changes on each Pokémon hit; status: condition inflicted on each target
+  const MOVE_EFFECTS = {
+    'swords-dance': { self: { attack: 2 } }, 'nasty-plot': { self: { 'special-attack': 2 } }, 'calm-mind': { self: { 'special-attack': 1, 'special-defense': 1 } },
+    'dragon-dance': { self: { attack: 1, speed: 1 } }, 'bulk-up': { self: { attack: 1, defense: 1 } }, agility: { self: { speed: 2 } }, 'rock-polish': { self: { speed: 2 } },
+    'quiver-dance': { self: { 'special-attack': 1, 'special-defense': 1, speed: 1 } }, 'shell-smash': { self: { attack: 2, 'special-attack': 2, speed: 2, defense: -1, 'special-defense': -1 } },
+    'iron-defense': { self: { defense: 2 } }, 'acid-armor': { self: { defense: 2 } }, barrier: { self: { defense: 2 } }, amnesia: { self: { 'special-defense': 2 } }, coil: { self: { attack: 1, defense: 1 } },
+    'work-up': { self: { attack: 1, 'special-attack': 1 } }, growth: { self: { attack: 1, 'special-attack': 1 } }, 'tail-glow': { self: { 'special-attack': 3 } }, 'hone-claws': { self: { attack: 1 } },
+    'cosmic-power': { self: { defense: 1, 'special-defense': 1 } }, 'victory-dance': { self: { attack: 1, defense: 1, speed: 1 } }, 'belly-drum': { self: { attack: 6 } },
+    'close-combat': { self: { defense: -1, 'special-defense': -1 } }, superpower: { self: { attack: -1, defense: -1 } }, 'draco-meteor': { self: { 'special-attack': -2 } },
+    overheat: { self: { 'special-attack': -2 } }, 'leaf-storm': { self: { 'special-attack': -2 } }, 'fleur-cannon': { self: { 'special-attack': -2 } }, 'make-it-rain': { self: { 'special-attack': -1 } },
+    'hammer-arm': { self: { speed: -1 } }, 'v-create': { self: { defense: -1, 'special-defense': -1, speed: -1 } }, 'armor-cannon': { self: { defense: -1, 'special-defense': -1 } },
+    'dragon-ascent': { self: { defense: -1, 'special-defense': -1 } }, 'headlong-rush': { self: { defense: -1, 'special-defense': -1 } },
+    'icy-wind': { target: { speed: -1 } }, electroweb: { target: { speed: -1 } }, 'bulldoze': { target: { speed: -1 } }, snarl: { target: { 'special-attack': -1 } },
+    'struggle-bug': { target: { 'special-attack': -1 } }, 'parting-shot': { target: { attack: -1, 'special-attack': -1 } }, charm: { target: { attack: -2 } }, screech: { target: { defense: -2 } },
+    'fake-tears': { target: { 'special-defense': -2 } }, growl: { target: { attack: -1 } }, leer: { target: { defense: -1 } }, tickle: { target: { attack: -1, defense: -1 } },
+    'metal-sound': { target: { 'special-defense': -2 } }, 'string-shot': { target: { speed: -2 } }, 'scary-face': { target: { speed: -2 } }, 'baby-doll-eyes': { target: { attack: -1 } },
+    'noble-roar': { target: { attack: -1, 'special-attack': -1 } }, 'breaking-swipe': { target: { attack: -1 } }, lunge: { target: { attack: -1 } }, 'trop-kick': { target: { attack: -1 } },
+    'spirit-break': { target: { 'special-attack': -1 } }, 'mystical-fire': { target: { 'special-attack': -1 } }, 'chilling-water': { target: { attack: -1 } }, 'bitter-malice': { target: { attack: -1 } },
+    'will-o-wisp': { status: 'brn' }, 'thunder-wave': { status: 'par' }, glare: { status: 'par' }, 'stun-spore': { status: 'par' }, toxic: { status: 'tox' }, 'poison-powder': { status: 'psn' },
+    spore: { status: 'slp' }, 'sleep-powder': { status: 'slp' }, hypnosis: { status: 'slp' }, sing: { status: 'slp' }, 'lovely-kiss': { status: 'slp' }, 'dark-void': { status: 'slp' }, nuzzle: { status: 'par' },
+  };
+  // How a move picks its targets, from PokeAPI's move target (falls back to a built-in table when that data isn't loaded).
+  function targetMode(slug) {
+    if (isFieldMove(slug)) return 'field';
+    const fx = MOVE_EFFECTS[slug];
+    const t = (sim.extras.get(slug) || {}).target;
+    if (!t) return fx && fx.self && !fx.target && !fx.status ? 'self' : 'single';
+    if (t === 'selected-pokemon' || t === 'selected-pokemon-me-first' || t === 'random-opponent' || t === 'specific-move' || t === 'user-or-ally') return 'single';
+    if (t === 'all-opponents' || t === 'all-other-pokemon') return 'spread';
+    if (t === 'ally') return 'ally';
+    if (t === 'user') return 'self';
+    return 'field';   // users-field, opponents-field, entire-field, user-and-allies, all-allies, all-pokemon, fainting-pokemon
+  }
+
   const defaultState = () => ({ game: CHAMPIONS_VG, format: 'doubles', phase: 'setup', teamId: null, myTeam: [], foe: [0, 1, 2, 3, 4, 5].map(() => ({ name: null })), leadsMine: [], backMine: [], leadsFoe: [], log: [] });
   let S = defaultState();
   const sim = { ready: false, roster: [], rosterMap: new Map(), extras: new Map(), loading: false, error: null };
@@ -114,15 +159,16 @@
 
   // ----- my side -----
   function mineMonOf(i, ms) { return rosterMon(effMega('mine', i, ms) || S.myTeam[i].pokemonName); }
-  function mineSpec(i, ms, conds) {
-    const slot = S.myTeam[i], mon = mineMonOf(i, ms);
+  function mineSpec(i, ms, conds, fld) {
+    const slot = S.myTeam[i], mon = mineMonOf(i, ms), f = fld || UI.curField || {};
     return {
+      weather: f.weather, terrain: f.terrain,
       label: slot.nickname || monDisplayName(mon), types: mon.types, base: mon.stats, level: level(), nature: slot.nature || 'hardy', sp: slot.evs, ivs: isChamp() ? null : slot.ivs,
       ability: effMega('mine', i, ms) ? (mon.abilities[0] || {}).name : slot.ability, item: slot.item, status: ms ? ms.status : '', curHp: ms ? ms.hp : null,
       boosts: ms ? ms.boosts : {}, canEvolve: !mon.isFinalEvolution, weight: mon.weight, tailwind: conds ? conds.tailwind : false,
     };
   }
-  const mineEngine = (i, ms, conds) => SimEngine.toEngineMon(mineSpec(i, ms, conds), isChamp());
+  const mineEngine = (i, ms, conds, fld) => SimEngine.toEngineMon(mineSpec(i, ms, conds, fld), isChamp());
 
   // ----- foe side -----
   function foeMonOf(i, fs) { const base = S.foe[i].name; return rosterMon((fs && effMega('foe', i, fs)) || base); }
@@ -135,8 +181,8 @@
     return mon.abilities.length === 1 ? mon.abilities[0].name : null;
   }
   /** scenario: 'likely' | 'maxOff' | 'minBulk' | 'maxBulk' | 'prior' (no inference). key = the stat the scenario is about. */
-  function foeSpec(i, fs, conds, infer, scenario, key) {
-    const mon = foeMonOf(i, fs), pri = foePri(i, fs);
+  function foeSpec(i, fs, conds, infer, scenario, key, fld) {
+    const mon = foeMonOf(i, fs), pri = foePri(i, fs), f = fld || UI.curField || {};
     const inf = scenario === 'prior' ? null : infer;
     const know = { itemKnown: fs.know.itemKnown, item: fs.know.item, abilityKnown: fs.know.abilityKnown, ability: fs.know.ability, map: inf && inf.map ? inf.map : null };
     const b = SimEngine.scenarioBuild(mon.stats, pri, know, scenario === 'prior' ? 'likely' : scenario, key, mon, isChamp());
@@ -144,6 +190,7 @@
     const spec = {
       label: monDisplayName(mon), types: mon.types, base: mon.stats, level: level(), nature: b.nature, sp: b.sp, ability: b.ability, item: b.item, status: fs.status,
       hpPct: fs.hpPct, boosts: fs.boosts, canEvolve: !mon.isFinalEvolution, weight: mon.weight, tailwind: conds ? conds.tailwind : false,
+      weather: f.weather, terrain: f.terrain,
     };
     if (inf && inf.ranges && scenario !== 'prior') {
       const ov = {}; const r = inf.ranges, mid = rg => rg.vals[Math.floor(rg.vals.length / 2)];
@@ -161,40 +208,105 @@
   }
   function foeEngine(spec) {
     const m = SimEngine.toEngineMon(spec, isChamp());
-    if (spec.statOverride) { Object.assign(m.stats, spec.statOverride); m.curHp = clamp(Math.round((spec.hpPct == null ? 100 : spec.hpPct) / 100 * m.stats.hp), 1, m.stats.hp); m.speedFinal = SimEngine.effSpeed(m.stats.speed, (spec.boosts || {}).speed, spec.tailwind, spec.status === 'par', spec.item === 'choice-scarf'); }
+    if (spec.statOverride) { Object.assign(m.stats, spec.statOverride); m.curHp = clamp(Math.round((spec.hpPct == null ? 100 : spec.hpPct) / 100 * m.stats.hp), 1, m.stats.hp); m.speedFinal = Math.floor(SimEngine.effSpeed(m.stats.speed, (spec.boosts || {}).speed, spec.tailwind, spec.status === 'par' && spec.ability !== 'quick-feet', spec.item === 'choice-scarf') * SimEngine.speedAbilityMult(spec.ability, spec.weather, spec.terrain, spec.status)); }
     return m;
   }
 
   // ---------- battle state: replay of the log ----------
   function newMine(i) { const slot = S.myTeam[i]; const m = mineEngine(i, null, null); return { hp: m.stats.hp, status: '', boosts: emptyBoosts(), mega: null, active: S.leadsMine.includes(i), fainted: false }; }
   function newFoe() { return { hpPct: 100, status: '', boosts: emptyBoosts(), mega: null, active: false, fainted: false, revealed: [], know: { item: null, itemKnown: false, ability: null, abilityKnown: false } }; }
+  const abilityOfActive = (st, side, i) => (side === 'mine' ? mineSpec(i, st.mine[i], null).ability : foeAssumedAbility(i, st.foe[i]));
   function autoField(st, side, i) {
-    const ab = side === 'mine' ? mineSpec(i, st.mine[i], null).ability : foeAssumedAbility(i, st.foe[i]);
-    if (WEATHER_SETTERS[ab]) st.field.weather = WEATHER_SETTERS[ab];
-    if (TERRAIN_SETTERS[ab]) st.field.terrain = TERRAIN_SETTERS[ab];
+    const ab = abilityOfActive(st, side, i);
+    if (WEATHER_SETTERS[ab]) { st.field.weather = WEATHER_SETTERS[ab]; delete st.timers['f:weather']; }
+    if (TERRAIN_SETTERS[ab]) { st.field.terrain = TERRAIN_SETTERS[ab]; delete st.timers['f:terrain']; }
+  }
+  // Intimidate: -1 Attack to every active opponent that doesn't have a blocking ability.
+  const INTIMIDATE_BLOCKERS = new Set(['clear-body', 'white-smoke', 'hyper-cutter', 'inner-focus', 'oblivious', 'own-tempo', 'scrappy', 'full-metal-body', 'mirror-armor', 'guard-dog']);
+  function autoIntimidate(st, side, i) {
+    if (abilityOfActive(st, side, i) !== 'intimidate') return;
+    const opp = side === 'mine' ? 'foe' : 'mine', list = opp === 'mine' ? st.mine : st.foe;
+    list.forEach((p, k) => {
+      if (!p.active || p.fainted || (opp === 'foe' && !S.foe[k].name)) return;
+      if (INTIMIDATE_BLOCKERS.has(abilityOfActive(st, opp, k))) return;
+      p.boosts.attack = clamp((p.boosts.attack || 0) - 1, -6, 6);
+    });
+  }
+
+  // ----- field changes with durations -----
+  function setTimer(st, id, left, label, clear) { if (left) st.timers[id] = { left, label, clear }; else delete st.timers[id]; }
+  function setFieldValue(st, key, value, turns, label) {
+    st.field[key] = value;
+    setTimer(st, 'f:' + key, value ? turns : 0, label, { kind: 'field', key, off: key === 'weather' || key === 'terrain' ? '' : false });
+  }
+  function setCondValue(st, side, key, value, turns, label) {
+    st.side[side].conds[key] = value;
+    setTimer(st, `c:${side}:${key}`, value ? turns : 0, label, { kind: 'cond', side, key, off: key === 'spikes' ? 0 : false });
+  }
+  function tickTimers(st) {
+    for (const id of Object.keys(st.timers)) {
+      const t = st.timers[id]; t.left--;
+      if (t.left > 0) continue;
+      if (t.clear.kind === 'field') st.field[t.clear.key] = t.clear.off; else st.side[t.clear.side].conds[t.clear.key] = t.clear.off;
+      delete st.timers[id];
+    }
+  }
+  /** What a logged move does to the field / the Pokémon involved. */
+  function applyMoveEffects(st, ev) {
+    const slug = ev.move, me = ev.actor.s, opp = me === 'mine' ? 'foe' : 'mine';
+    const who = me === 'mine' ? 'your side' : 'their side', whoOpp = me === 'mine' ? 'their side' : 'your side';
+    if (WEATHER_MOVES[slug]) setFieldValue(st, 'weather', WEATHER_MOVES[slug], 5, `${formatName(WEATHER_MOVES[slug])} weather`);
+    else if (TERRAIN_MOVES[slug]) setFieldValue(st, 'terrain', TERRAIN_MOVES[slug], 5, `${formatName(TERRAIN_MOVES[slug])} Terrain`);
+    else if (ROOM_MOVES[slug]) { const k = ROOM_MOVES[slug]; setFieldValue(st, k, k === 'trickRoom' && st.field.trickRoom ? false : true, 5, formatName(slug)); }
+    else if (SIDE_MOVES[slug]) {
+      const [cond, whose, turns] = SIDE_MOVES[slug]; const side = whose === 'self' ? me : opp;
+      setCondValue(st, side, cond, true, turns, `${formatName(slug)} (${whose === 'self' ? who : whoOpp})`);
+    } else if (slug === 'spikes') setCondValue(st, opp, 'spikes', Math.min(3, (st.side[opp].conds.spikes || 0) + 1), 0, '');
+    else if (slug === 'defog') {
+      for (const k of ['reflect', 'lightScreen', 'auroraVeil']) setCondValue(st, opp, k, false, 0, '');
+      for (const side of ['mine', 'foe']) { setCondValue(st, side, 'stealthRock', false, 0, ''); setCondValue(st, side, 'spikes', 0, 0, ''); }
+    } else if (CLEARS_OWN_HAZARDS.has(slug)) { setCondValue(st, me, 'stealthRock', false, 0, ''); setCondValue(st, me, 'spikes', 0, 0, ''); }
+
+    const fx = MOVE_EFFECTS[slug];
+    const part = (s, i) => (s === 'mine' ? st.mine[i] : st.foe[i]);
+    const bump = (p, changes) => { if (p) for (const [k, v] of Object.entries(changes)) p.boosts[k] = clamp((p.boosts[k] || 0) + v, -6, 6); };
+    if (fx && fx.self) {
+      const actor = part(me, ev.actor.i);
+      if (slug === 'belly-drum') actor.boosts.attack = 6; else bump(actor, fx.self);
+    }
+    for (const tr of ev.targets) {
+      if (tr.immune || (tr.s === me && tr.i === ev.actor.i)) continue;
+      const p = part(tr.s, tr.i); if (!p || p.fainted) continue;
+      if (fx && fx.target && tr.s !== me) bump(p, fx.target);
+      if (fx && fx.status && tr.s !== me && !p.status) p.status = fx.status;
+      if (BREAKS_SCREENS.has(slug) && tr.s !== me && tr.lost > 0) for (const k of ['reflect', 'lightScreen', 'auroraVeil']) setCondValue(st, tr.s, k, false, 0, '');
+    }
   }
   function initialState() {
-    const st = { turn: 1, field: { weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false }, side: { mine: { conds: emptyConds() }, foe: { conds: emptyConds() } }, mine: [], foe: [] };
+    const st = { turn: 1, field: { weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false }, side: { mine: { conds: emptyConds() }, foe: { conds: emptyConds() } }, mine: [], foe: [], timers: {} };
     S.myTeam.forEach((_, i) => st.mine.push(newMine(i)));
     S.foe.forEach((f, i) => { const fs = newFoe(); fs.active = S.leadsFoe.includes(i); st.foe.push(fs); });
     S.leadsMine.forEach(i => autoField(st, 'mine', i));
     S.leadsFoe.forEach(i => { if (S.foe[i].name) autoField(st, 'foe', i); });
+    S.leadsMine.forEach(i => autoIntimidate(st, 'mine', i));
+    S.leadsFoe.forEach(i => { if (S.foe[i].name) autoIntimidate(st, 'foe', i); });
     return st;
   }
   function maxHpOf(i, st) { return mineEngine(i, st.mine[i], null).stats.hp; }
   function applyEvent(st, ev) {
     const part = (s, i) => (s === 'mine' ? st.mine[i] : st.foe[i]);
     switch (ev.t) {
-      case 'turn': st.turn++; break;
+      case 'turn': st.turn++; tickTimers(st); break;
       case 'move': {
         if (ev.actor.s === 'foe' && ev.move && !st.foe[ev.actor.i].revealed.includes(ev.move)) st.foe[ev.actor.i].revealed.push(ev.move);
         for (const tr of ev.targets) {
-          const p = part(tr.s, tr.i); if (!p) continue;
+          const p = part(tr.s, tr.i); if (!p || tr.immune) continue;
           if (tr.s === 'mine') {
             p.hp = tr.fainted ? 0 : clamp(p.hp - (tr.lost || 0), 0, maxHpOf(tr.i, st));
           } else p.hpPct = tr.fainted ? 0 : clamp(p.hpPct - (tr.lost || 0), 0, 100);
           if (tr.fainted || (tr.s === 'mine' ? p.hp <= 0 : p.hpPct <= 0)) { p.fainted = true; p.active = false; }
         }
+        if (!ev.missed) applyMoveEffects(st, ev);
         break;
       }
       case 'set': {
@@ -203,8 +315,8 @@
         else if (ev.what === 'status') p.status = ev.value;
         else if (ev.what === 'boost') p.boosts[ev.key] = clamp(ev.value, -6, 6);
         else if (ev.what === 'mega') { p.mega = ev.value === undefined ? null : ev.value; }
-        else if (ev.what === 'field') st.field[ev.key] = ev.value;
-        else if (ev.what === 'cond') st.side[ev.side].conds[ev.key] = ev.value;
+        else if (ev.what === 'field') { st.field[ev.key] = ev.value; delete st.timers['f:' + ev.key]; }
+        else if (ev.what === 'cond') { st.side[ev.side].conds[ev.key] = ev.value; delete st.timers[`c:${ev.side}:${ev.key}`]; }
         else if (ev.what === 'revive') { p.fainted = false; }
         break;
       }
@@ -214,6 +326,7 @@
         if (out) { out.active = false; out.boosts = emptyBoosts(); }
         if (inn) { inn.active = true; inn.fainted = false; }
         autoField(st, side, ev.in);
+        autoIntimidate(st, side, ev.in);
         break;
       }
       default: break;
@@ -222,6 +335,7 @@
   function replay() {
     const st = initialState();
     for (const ev of S.log) applyEvent(st, ev);
+    UI.curField = st.field;
     return st;
   }
   function pushEvent(ev) { S.log.push(ev); UI.inferCache = null; save(); }
@@ -238,18 +352,29 @@
       const mv = engMove(ev.move, { crit: ev.crit, hits: ev.hits || undefined, target: nDmgTargets >= 2 ? undefined : 'selected-pokemon' });
       if (mv.category === 'status') return;
       ev.targets.forEach((tr, k) => {
-        if (tr.lost == null || tr.lost <= 0 || !ev.snap.targets[k]) return;
+        if (!ev.snap.targets[k]) return;
         const t0 = ev.snap.targets[k];
+        // "It had no effect" on a Pokémon that this type should normally hit: only an ability (Levitate, Flash Fire, ...) explains it.
+        if (tr.immune && ev.actor.s === 'mine' && tr.s === 'foe') {
+          const fs = st.foe[tr.i];
+          const attacker = mineEngine(ev.actor.i, ev.snap.actor, ev.snap.conds.mine, ev.snap.field);
+          const defender = foeEngine(foeSpec(tr.i, Object.assign({}, fs, { mega: t0.mega, status: t0.status, boosts: t0.boosts, hpPct: t0.hpPct }), ev.snap.conds.foe, null, 'prior', 'defense', ev.snap.field));
+          const field = engineFieldFromSnap(ev.snap, 'mine');
+          const byTypeAlone = CalcEngine.calc(attacker, Object.assign({}, defender, { ability: null }), mv, field);
+          if (!byTypeAlone.immune) add(tr.i, { kind: 'immune', form: effMega('foe', tr.i, Object.assign({}, fs, { mega: t0.mega })) || S.foe[tr.i].name, attacker, defender, move: mv, field });
+          return;
+        }
+        if (tr.lost == null || tr.lost <= 0) return;
         if (ev.actor.s === 'foe' && tr.s === 'mine') {
           const fs = st.foe[ev.actor.i];
           if (!foeMonOf(ev.actor.i, { mega: ev.snap.actor.mega })) return;
-          const attacker = foeEngine(foeSpec(ev.actor.i, Object.assign({}, fs, { mega: ev.snap.actor.mega, status: ev.snap.actor.status, boosts: ev.snap.actor.boosts, hpPct: ev.snap.actor.hpPct }), ev.snap.conds.foe, null, 'prior', 'attack'));
-          const defender = mineEngine(tr.i, t0, ev.snap.conds.mine);
+          const attacker = foeEngine(foeSpec(ev.actor.i, Object.assign({}, fs, { mega: ev.snap.actor.mega, status: ev.snap.actor.status, boosts: ev.snap.actor.boosts, hpPct: ev.snap.actor.hpPct }), ev.snap.conds.foe, null, 'prior', 'attack', ev.snap.field));
+          const defender = mineEngine(tr.i, t0, ev.snap.conds.mine, ev.snap.field);
           add(ev.actor.i, { kind: 'offense', form: effMega('foe', ev.actor.i, Object.assign({}, fs, { mega: ev.snap.actor.mega })) || S.foe[ev.actor.i].name, attacker, defender, move: mv, field: Object.assign(engineFieldFromSnap(ev.snap, 'foe'), {}), dmg: tr.lost, ko: !!tr.fainted, remaining: t0.hp });
         } else if (ev.actor.s === 'mine' && tr.s === 'foe') {
           const fs = st.foe[tr.i];
-          const attacker = mineEngine(ev.actor.i, ev.snap.actor, ev.snap.conds.mine);
-          const defender = foeEngine(foeSpec(tr.i, Object.assign({}, fs, { mega: t0.mega, status: t0.status, boosts: t0.boosts, hpPct: t0.hpPct }), ev.snap.conds.foe, null, 'prior', 'defense'));
+          const attacker = mineEngine(ev.actor.i, ev.snap.actor, ev.snap.conds.mine, ev.snap.field);
+          const defender = foeEngine(foeSpec(tr.i, Object.assign({}, fs, { mega: t0.mega, status: t0.status, boosts: t0.boosts, hpPct: t0.hpPct }), ev.snap.conds.foe, null, 'prior', 'defense', ev.snap.field));
           add(tr.i, { kind: 'bulk', form: effMega('foe', tr.i, Object.assign({}, fs, { mega: t0.mega })) || S.foe[tr.i].name, attacker, defender, move: mv, field: engineFieldFromSnap(ev.snap, 'mine'), dropPct: tr.lost, beforePct: t0.hpPct, ko: !!tr.fainted });
         }
       });
@@ -261,9 +386,10 @@
       const pa = (moveDetails.get(a.move) || {}).priority || 0, pb = (moveDetails.get(b.move) || {}).priority || 0;
       if (pa !== pb) continue;
       const foeEv = a.actor.s === 'foe' ? a : b, mineEv = a.actor.s === 'mine' ? a : b;
-      const mySpeed = mineEngine(mineEv.actor.i, mineEv.snap.actor, mineEv.snap.conds.mine).speedFinal;
+      const mySpeed = mineEngine(mineEv.actor.i, mineEv.snap.actor, mineEv.snap.conds.mine, mineEv.snap.field).speedFinal;
       add(foeEv.actor.i, { kind: 'order', form: effMega('foe', foeEv.actor.i, Object.assign({}, st.foe[foeEv.actor.i], { mega: foeEv.snap.actor.mega })) || S.foe[foeEv.actor.i].name, mySpeed, foeFirst: a.actor.s === 'foe', trickRoom: !!a.snap.field.trickRoom,
-        foeBoost: foeEv.snap.actor.boosts.speed || 0, foeTailwind: !!foeEv.snap.conds.foe.tailwind, foePar: foeEv.snap.actor.status === 'par' });
+        foeBoost: foeEv.snap.actor.boosts.speed || 0, foeTailwind: !!foeEv.snap.conds.foe.tailwind, foePar: foeEv.snap.actor.status === 'par',
+        foeStatus: foeEv.snap.actor.status, weather: a.snap.field.weather, terrain: a.snap.field.terrain });
     }
     return byFoe;
   }
@@ -283,8 +409,10 @@
       const usable = list.filter(o => o.form === current);
       if (!usable.length) continue;
       try {
-        res[i] = SimEngine.inferFoe({ base: mon.stats, canEvolve: !mon.isFinalEvolution }, usable, { champ: isChamp(), level: level(), pri: foePri(i, fs),
-          know: { itemKnown: fs.know.itemKnown, item: fs.know.item } });
+        const know = { itemKnown: fs.know.itemKnown, item: fs.know.item, abilityKnown: fs.know.abilityKnown, ability: fs.know.ability };
+        const pri = foePri(i, fs);
+        res[i] = SimEngine.inferFoe({ base: mon.stats, canEvolve: !mon.isFinalEvolution }, usable, { champ: isChamp(), level: level(), pri, know,
+          abilities: SimEngine.abilityCandidates(mon, pri, know) });
       } catch (e) { console.error('inference failed', e); }
     }
     UI.inferCache = { len: S.log.length, res, ms: Math.round(performance.now() - t0) };
@@ -468,7 +596,10 @@
         const hi = SimEngine.moveResult(m, foeEngine(foeSpec(j, fs, st.side.foe.conds, infer[j], 'maxBulk', key)), em, engineField(st, 'mine', true));
         const b = koBadge(likely, fs.hpPct);
         const tgt = monDisplayName(foeMonOf(j, fs));
-        return `<span class="sm-res" title="vs ${esc(tgt)}: likely ${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%, no investment up to ${fmtPct(lo.pctMax)}%, max bulk down to ${fmtPct(hi.pctMin)}%"><em class="sm-tg tf">${esc(tgt)}</em><b>${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%</b><i class="${b.cls}">${b.t}</i><small>${fmtPct(hi.pctMin)}–${fmtPct(lo.pctMax)}%</small></span>`;
+        // if one of their possible abilities would make this move do nothing (Levitate vs Ground, Flash Fire vs Fire, ...), say so
+        const risks = fs.know.abilityKnown ? [] : SimEngine.immunityRisks(foeAbilityOdds(j, fs, infer[j]), em.type);
+        const riskTxt = risks.length ? `<small class="sm-risk" title="Possible ability that would make this move do nothing">immune if ${risks.map(r => `${esc(formatName(r.slug))} ${Math.round(r.p * 100)}%`).join(' / ')}</small>` : '';
+        return `<span class="sm-res" title="vs ${esc(tgt)}: likely ${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%, no investment up to ${fmtPct(lo.pctMax)}%, max bulk down to ${fmtPct(hi.pctMin)}%"><em class="sm-tg tf">${esc(tgt)}</em><b>${fmtPct(likely.pctMin)}–${fmtPct(likely.pctMax)}%</b><i class="${b.cls}">${b.t}</i><small>${fmtPct(hi.pctMin)}–${fmtPct(lo.pctMax)}%</small>${riskTxt}</span>`;
       }).join('');
       return `<div class="sm-move"><span class="mvchip" style="background:${typeColor(em.type)}">${esc(formatName(slug))}</span>${cols || '<span class="sm-dim">no target</span>'}</div>`;
     }).join('');
@@ -483,9 +614,24 @@
       <button type="button" class="sm-linkbtn" data-act="edit" data-side="mine" data-i="${i}">${editing ? 'Close overrides' : 'Override…'}</button>${editing ? overrideHtml('mine', i, st, stone) : ''}</div>`;
   }
 
+  /** Odds for each ability a foe could have: narrowed by what's been logged if anything was, otherwise from usage data. */
+  function foeAbilityOdds(j, fs, inf) {
+    const mon = foeMonOf(j, fs), pri = foePri(j, fs);
+    const know = { abilityKnown: fs.know.abilityKnown, ability: fs.know.ability };
+    if (!fs.know.abilityKnown && inf && inf.abilities && inf.abilities.length && inf.abilities.every(a => a.slug)) return inf.abilities;
+    return SimEngine.abilityCandidates(mon, pri, know);
+  }
+
   function foeCardHtml(j, st, infer, actM) {
     const fs = st.foe[j], mon = foeMonOf(j, fs), pri = foePri(j, fs), inf = infer[j];
-    const ab = foeAssumedAbility(j, fs);
+    const abOdds = foeAbilityOdds(j, fs, inf);
+    const abLocked = fs.know.abilityKnown, abNarrowed = !!(inf && inf.abilities && inf.abilities.length && inf.n);
+    const abTop = abOdds[0];
+    const ab = abLocked ? fs.know.ability : (abOdds.length === 1 || (abTop && abTop.p >= 0.6) ? abTop.slug : null);
+    const abChips = abOdds.length > 1 || abLocked ? abOdds.map(a => {
+      const info = abilityDetails.get(a.slug) || CHAMPIONS_ABILITY_OVERRIDES[a.slug] || {};
+      return `<button type="button" class="sm-chip${abLocked && fs.know.ability === a.slug ? ' on' : ''}" data-act="lock-ability" data-i="${j}" data-ab="${esc(a.slug)}" title="${esc(info.shortEffect || '')} (click to lock as their ability)">${esc(formatName(a.slug))} <i>${Math.round(a.p * 100)}%</i></button>`;
+    }).join('') : '';
     const items = (inf && inf.items && inf.items.length ? inf.items.slice(0, 5).map(x => ({ slug: x.slug, p: x.p, inferred: true })) : (pri ? pri.items.slice().sort((a, b) => b.p - a.p).slice(0, 5) : []));
     const itemChips = items.filter(x => x.slug && (x.p >= 0.01 || (fs.know.itemKnown && fs.know.item === x.slug))).map(x => `<button type="button" class="sm-chip${fs.know.itemKnown && fs.know.item === x.slug ? ' on' : ''}" data-act="lock-item" data-i="${j}" data-item="${esc(x.slug)}" title="Click to lock as their item">${esc(formatName(x.slug))} <i>${Math.round(x.p * 100)}%</i></button>`).join('') +
       `<button type="button" class="sm-chip${fs.know.itemKnown && !fs.know.item ? ' on' : ''}" data-act="lock-item" data-i="${j}" data-item="">none / unknown</button>`;
@@ -513,9 +659,10 @@
     return `<div class="sm-mon side-b${fs.fainted ? ' fainted' : ''}">
       <div class="sm-mon-head" data-act="actor" data-side="foe" data-i="${j}" title="Click to log this Pokémon's move">${sprite(mon, 'sm-sprite-l')}
         <div><b>${esc(monDisplayName(mon))}</b><div class="sm-types">${mon.types.map(tbadge).join('')}</div>
-        <div class="sm-dim">${ab ? esc(formatName(ab)) : 'ability unknown'}${fs.know.abilityKnown ? ' (locked)' : ''}</div></div></div>
+        <div class="sm-dim">${ab ? esc(formatName(ab)) + (abLocked ? ' (locked)' : abOdds.length > 1 ? (abNarrowed ? ' (narrowed)' : ' (likely)') : '') : 'ability unknown'}</div></div></div>
       <div class="sm-hp"><div class="hp-track"><div class="hp-fill ${fs.hpPct <= 20 ? 'low' : fs.hpPct <= 50 ? 'mid' : 'ok'}" style="width:${fs.hpPct}%"></div></div><span>${fmtPct(fs.hpPct)}% HP</span></div>
       <div class="sm-stagerow">${stagesHtml('foe', j, fs.boosts)}${statusChip(fs.status)}${effMega('foe', j, fs) ? `<span class="sm-stage up">${fs.mega ? 'Mega' : 'Mega (assumed)'}</span>` : ''}</div>
+      ${abChips ? `<div class="sm-block"><div class="sm-dim">Ability ${abNarrowed && !abLocked ? '<small>(odds updated from what you logged)</small>' : abLocked ? '<small>(locked — click again to unlock)</small>' : '<small>(usage odds — click to lock one in)</small>'}</div><div class="sm-chips">${abChips}</div></div>` : ''}
       <div class="sm-block"><div class="sm-dim">Holds</div><div class="sm-chips">${itemChips}</div></div>
       ${revealed ? `<div class="sm-block"><div class="sm-dim">Revealed moves</div><div class="sm-chips">${revealed}</div></div>` : ''}
       <div class="sm-moves"><div class="sm-dim">What they threaten — each of your active Pokémon <small>(likely · max-investment)</small></div>${threats || '<div class="sm-dim">No damaging moves known.</div>'}</div>
@@ -535,6 +682,8 @@
     const lines = ['attack', 'special-attack', 'hp', 'defense', 'special-defense', 'speed'].map(k => rangeLine(k, STAT_LABELS[k])).join('');
     const builds = inf.builds.slice(0, 3).map(b => `<div class="sm-build">${esc(formatName(b.nature))} · ${STAT_KEYS.filter(k => b.sp[k] > 0).map(k => `${b.sp[k]} ${STAT_LABELS[k]}`).join(' / ') || 'no investment'} <i>${Math.round(b.p * 100)}%</i></div>`).join('');
     const items = inf.items.slice(0, 3).filter(x => x.slug).map(x => `${esc(formatName(x.slug))} ${Math.round(x.p * 100)}%`).join(' · ');
+    const abilities = inf.abilities && inf.abilities.length > 1 ? inf.abilities.filter(x => x.slug).map(x => `${esc(formatName(x.slug))} ${Math.round(x.p * 100)}%`).join(' · ') : '';
+    const ruledOut = mon.abilities.length > 1 && inf.abilities && inf.abilities.length === 1 && inf.abilities[0].slug ? formatName(inf.abilities[0].slug) : '';
     const empties = Object.entries(inf.ranges).filter(([, r]) => !r.vals.length).map(([k]) => k);
     const why = [];
     if (empties.includes('speed')) why.push('their Speed can\'t match the move order you logged (Choice Scarf, Tailwind, Trick Room or a priority move?)');
@@ -542,7 +691,8 @@
     if (empties.some(k => k === 'hp' || k === 'defense' || k === 'special-defense')) why.push('no HP/defence combination gives that percentage (check the % and any stat changes)');
     return `<div class="sm-narrow"><div class="sm-dim">Narrowed from ${inf.n} observation${inf.n > 1 ? 's' : ''}</div>
       ${inf.impossible ? `<div><b class="bad">Nothing fits:</b> ${esc(why.join('; ') || 'the logged results contradict each other')}.</div>` : ''}${lines}
-      ${builds ? `<div class="sm-dim">Most likely builds</div>${builds}` : ''}${items ? `<div class="sm-dim">Item odds: ${items}</div>` : ''}</div>`;
+      ${builds ? `<div class="sm-dim">Most likely builds</div>${builds}` : ''}${items ? `<div class="sm-dim">Item odds: ${items}</div>` : ''}
+      ${abilities ? `<div class="sm-dim">Ability odds: ${abilities}</div>` : ''}${ruledOut ? `<div class="sm-dim">Everything else ruled out — it must be <b>${esc(ruledOut)}</b>.</div>` : ''}</div>`;
   }
 
   function overrideHtml(side, i, st, extra) {
@@ -578,14 +728,25 @@
         <div class="sm-fld"><span>Terrain</span><select data-ov="field" data-key="terrain">${TERRAIN_OPTS.map(([v, l]) => opt(v, l, v === f.terrain)).join('')}</select></div>
         <div class="sm-fld"><span>Field</span><details class="calc-dd"><summary>Field effects${nF ? ' · ' + nF : ''}</summary><div class="calc-dd-body">${FIELD_TOGGLES.map(([k, l]) => `<label class="chk"><input type="checkbox" data-ov="field-t" data-key="${k}"${f[k] ? ' checked' : ''}> ${l}</label>`).join('')}</div></details></div>
         <div class="sm-fld"><span>Your side</span>${dd('mine', 'Conditions')}</div><div class="sm-fld"><span>Their side</span>${dd('foe', 'Conditions')}</div>
-      </div></div>`;
+      </div>
+      ${Object.keys(st.timers).length ? `<div class="sm-timers">${Object.values(st.timers).filter(t => t.label).map(t => `<span class="sm-chip"><b>${esc(t.label)}</b> <i>${t.left} more turn${t.left > 1 ? 's' : ''}</i></span>`).join('')}</div>` : ''}
+      </div>`;
+  }
+
+  /** Short note appended to a logged move saying what it changed besides damage. */
+  function fieldMoveNote(ev) {
+    const slug = ev.move;
+    if (isFieldMove(slug)) return fieldMoveSummary(slug, ev.actor.s).replace(/\.$/, '');
+    const p = effectPreview(slug, ev.actor.s);
+    return p ? p.replace(/^Applied automatically — /, '').replace(/\.$/, '') : '';
   }
 
   function logLine(ev, st) {
     const who = (s, i) => (s === 'mine' ? (S.myTeam[i] ? (S.myTeam[i].nickname || monDisplayName(mineMonOf(i, st.mine[i]))) : '?') : (S.foe[i] && S.foe[i].name ? monDisplayName(foeMonOf(i, st.foe[i])) : '?'));
     if (ev.t === 'move') {
-      const tr = ev.targets.map(t => `${who(t.s, t.i)} ${t.fainted ? 'fainted' : t.lost == null ? '' : t.lost > 0 ? `−${t.lost}${t.s === 'foe' ? '%' : ' HP'}` : t.lost < 0 ? `+${-t.lost}${t.s === 'foe' ? '%' : ' HP'}` : '(no damage)'}`).join(', ');
-      return `<b>${esc(who(ev.actor.s, ev.actor.i))}</b> used ${esc(formatName(ev.move))}${ev.crit ? ' (crit)' : ''}${ev.missed ? ' — missed' : ''}${tr ? ' → ' + esc(tr) : ''}`;
+      const tr = ev.targets.map(t => `${who(t.s, t.i)} ${t.immune ? 'was unaffected' : t.fainted ? 'fainted' : t.lost == null ? '' : t.lost > 0 ? `−${t.lost}${t.s === 'foe' ? '%' : ' HP'}` : t.lost < 0 ? `+${-t.lost}${t.s === 'foe' ? '%' : ' HP'}` : '(no damage)'}`.trim()).join(', ');
+      const note = ev.missed ? '' : fieldMoveNote(ev);
+      return `<b>${esc(who(ev.actor.s, ev.actor.i))}</b> used ${esc(formatName(ev.move))}${ev.crit ? ' (crit)' : ''}${ev.missed ? ' — missed' : ''}${tr ? ' → ' + esc(tr) : ''}${note ? ` <span class="sm-dim">· ${esc(note)}</span>` : ''}`;
     }
     if (ev.t === 'switch') return `${esc(who(ev.side, ev.out))} → ${esc(who(ev.side, ev.in))} switched in`;
     if (ev.t === 'turn') return `<i>Turn ${ev.n} begins</i>`;
@@ -608,28 +769,67 @@
     const dl = side === 'foe' ? `<datalist id="sim-moves">${Array.from(actorMon.allMoveNames).filter(s => moveDetails.has(s)).map(s => `<option value="${esc(formatName(s))}">`).join('')}</datalist>` : '';
     const sel = c.move || '';
     const em = sel ? engMove(sel) : null;
+    const mode = sel ? targetMode(sel) : null;
+    const isStatus = !!em && em.category === 'status';
+    const heals = !!sel && ((sim.extras.get(sel) || {}).flags || []).includes('heal');
     const actives = [];
     S.myTeam.forEach((_, k) => { if (st.mine[k].active) actives.push({ s: 'mine', i: k }); });
     S.foe.forEach((f, k) => { if (f.name && st.foe[k].active) actives.push({ s: 'foe', i: k }); });
-    const targets = actives.filter(a => !(a.s === side && a.i === i) || (em && em.category === 'status'));
-    const rows = targets.map(a => {
-      const isOn = c.targets.some(t => t.s === a.s && t.i === a.i);
-      const lab = a.s === 'mine' ? (S.myTeam[a.i].nickname || S.myTeam[a.i].displayName) : monDisplayName(rosterMon(S.foe[a.i].name));
-      const mine = a.s === 'mine';
-      return `<div class="sm-trow${isOn ? ' on' : ''}"><label class="chk"><input type="checkbox" data-cmp="target" data-s="${a.s}" data-i="${a.i}"${isOn ? ' checked' : ''}> <span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span></label>
-        ${isOn ? `<span class="sm-lost"><input type="number" step="${mine ? 1 : 0.5}" data-cmp="lost" data-s="${a.s}" data-i="${a.i}" placeholder="${mine ? 'HP lost' : '% lost'}" value="${(c.targets.find(t => t.s === a.s && t.i === a.i) || {}).lost ?? ''}"><small>${mine ? 'HP points (negative = healed)' : '% of their HP (negative = healed)'}</small>
-          <label class="chk"><input type="checkbox" data-cmp="faint" data-s="${a.s}" data-i="${a.i}"${(c.targets.find(t => t.s === a.s && t.i === a.i) || {}).fainted ? ' checked' : ''}> fainted</label></span>` : ''}</div>`;
+    let pool = [];
+    if (mode === 'self') pool = heals ? [{ s: side, i }] : [];
+    else if (mode === 'ally') pool = actives.filter(a => a.s === side && a.i !== i);
+    else if (mode === 'single' || mode === 'spread') pool = actives.filter(a => !(a.s === side && a.i === i));
+    // HP numbers are only asked for when the move can change HP: damaging moves, healing moves, and moves aimed at an ally
+    const showHp = !isStatus || mode === 'self' || mode === 'ally';
+    const rows = pool.map(a => {
+      const t = c.targets.find(x => x.s === a.s && x.i === a.i), isOn = !!t;
+      const lab = a.s === 'mine' ? (S.myTeam[a.i].nickname || S.myTeam[a.i].displayName) : monDisplayName(foeMonOf(a.i, st.foe[a.i]));
+      const mine = a.s === 'mine', forced = pool.length === 1 && (mode === 'self' || mode === 'ally');
+      const canImmune = !isStatus && a.s !== side;
+      return `<div class="sm-trow${isOn ? ' on' : ''}">${forced ? `<span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span>`
+        : `<label class="chk"><input type="${mode === 'single' ? 'radio' : 'checkbox'}" name="sim-target" data-cmp="target" data-s="${a.s}" data-i="${a.i}"${isOn ? ' checked' : ''}> <span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span></label>`}
+        ${isOn && (showHp || canImmune) ? `<span class="sm-lost">${showHp && !(t && t.immune) ? `<input type="number" step="${mine ? 1 : 0.5}" data-cmp="lost" data-s="${a.s}" data-i="${a.i}" placeholder="${mine ? 'HP lost' : '% lost'}" value="${t.lost ?? ''}"><small>${mine ? 'HP points (negative = healed)' : '% of their HP (negative = healed)'}</small>
+          <label class="chk"><input type="checkbox" data-cmp="faint" data-s="${a.s}" data-i="${a.i}"${t.fainted ? ' checked' : ''}> fainted</label>` : ''}
+          ${canImmune ? `<label class="chk" title="It didn't affect the target — reveals an immunity ability like Levitate or Flash Fire"><input type="checkbox" data-cmp="immune" data-s="${a.s}" data-i="${a.i}"${t.immune ? ' checked' : ''}> no effect</label>` : ''}</span>` : ''}</div>`;
     }).join('');
+    const prompt = !sel ? '' : mode === 'field' ? `<div class="sm-dim">${esc(fieldMoveSummary(sel, side))} No target needed.</div>`
+      : mode === 'self' ? `<div class="sm-dim">${heals ? 'It heals itself — enter the HP it recovered (as a negative number of HP lost).' : 'It only affects the user — nothing to enter.'}</div>`
+      : mode === 'ally' ? `<div class="sm-dim">Aimed at an ally.</div>`
+      : `<div class="sm-dim">${mode === 'spread' ? 'Hits several Pokémon — untick any it missed.' : 'On whom?'}${showHp ? ` Then enter ${side === 'foe' ? 'the HP your Pokémon lost' : 'the % the opponent lost'}.` : ' Known stat and status changes are applied automatically.'}</div>`;
+    const effNote = sel ? esc(effectPreview(sel, side)) : '';
     const hitOpts = em && (sim.extras.get(sel) || {}).maxHits > (sim.extras.get(sel) || {}).minHits ? (() => { const x = sim.extras.get(sel); const o = []; for (let n = x.minHits; n <= x.maxHits; n++) o.push(n); return o; })() : null;
     return `<div class="sm-composer"><div class="sm-comp-title">Turn ${st.turn} · <b class="${side === 'mine' ? 'tm' : 'tf'}">${esc(actorLabel)}</b> used</div>
       ${dl}<div class="sm-comp-move">
         ${side === 'mine' ? `<select data-cmp="move">${opt('', 'Choose a move…', !sel)}${moveOpts.map(s => opt(s, formatName(s), s === sel)).join('')}</select>`
           : `<input type="text" list="sim-moves" data-cmp="move-text" placeholder="Move name…" value="${sel ? esc(formatName(sel)) : ''}">${moveOpts.length ? `<div class="sm-chips">${moveOpts.slice(0, 8).map(s => `<button type="button" class="sm-chip${s === sel ? ' on' : ''}" data-act="pick-move" data-move="${esc(s)}">${esc(formatName(s))}</button>`).join('')}</div>` : ''}`}
       </div>
-      ${sel ? `<div class="sm-dim">On whom? Then enter ${side === 'foe' ? 'the HP your Pokémon lost' : 'the % the opponent lost'}.</div><div class="sm-targets">${rows || '<div class="sm-dim">No other active Pokémon.</div>'}</div>
-        <div class="sm-comp-opts"><label class="chk"><input type="checkbox" data-cmp="crit"${c.crit ? ' checked' : ''}> Critical hit</label><label class="chk"><input type="checkbox" data-cmp="missed"${c.missed ? ' checked' : ''}> Missed / no effect</label>
+      ${sel ? `${prompt}${rows ? `<div class="sm-targets">${rows}</div>` : ''}
+        ${effNote ? `<div class="sm-effect">${effNote}</div>` : ''}
+        <div class="sm-comp-opts">${isStatus ? '' : `<label class="chk"><input type="checkbox" data-cmp="crit"${c.crit ? ' checked' : ''}> Critical hit</label>`}<label class="chk"><input type="checkbox" data-cmp="missed"${c.missed ? ' checked' : ''}> ${isStatus ? 'Failed / missed' : 'Missed'}</label>
           ${hitOpts ? `<label>Hits <select data-cmp="hits">${hitOpts.map(n => opt(n, n, n === (c.hits || 0))).join('')}</select></label>` : ''}</div>
         <div class="sm-comp-actions"><button type="button" class="sm-go" data-act="add-action">Add to turn</button><button type="button" class="reset-btn" data-act="cancel-composer">Cancel</button></div>` : ''}</div>`;
+  }
+
+  /** One-line description of what a field-changing move will do. */
+  function fieldMoveSummary(slug, side) {
+    const who = side === 'mine' ? 'your' : 'their', opp = side === 'mine' ? 'their' : 'your';
+    if (WEATHER_MOVES[slug]) return `Sets ${formatName(WEATHER_MOVES[slug])} for 5 turns.`;
+    if (TERRAIN_MOVES[slug]) return `Sets ${formatName(TERRAIN_MOVES[slug])} Terrain for 5 turns.`;
+    if (ROOM_MOVES[slug]) return `${formatName(slug)} for 5 turns (using it again while active ends it).`;
+    if (SIDE_MOVES[slug]) { const [, whose, turns] = SIDE_MOVES[slug]; return `Sets ${formatName(slug)} on ${whose === 'self' ? who : opp} side${turns ? ` for ${turns} turn${turns > 1 ? 's' : ''}` : ''}.`; }
+    if (slug === 'spikes') return `Adds a layer of Spikes on ${opp} side.`;
+    if (slug === 'defog') return 'Clears screens and hazards.';
+    return 'Clears hazards on the user\'s side.';
+  }
+  /** Stat / status effects a move will apply automatically, for the composer and log. */
+  function effectPreview(slug, side) {
+    const fx = MOVE_EFFECTS[slug]; if (!fx) return '';
+    const fmt = ch => Object.entries(ch).map(([k, v]) => `${STAT_LABELS[k]} ${v > 0 ? '+' : ''}${v}`).join(', ');
+    const parts = [];
+    if (fx.self) parts.push(`user: ${fmt(fx.self)}`);
+    if (fx.target) parts.push(`target: ${fmt(fx.target)}`);
+    if (fx.status) parts.push(`target is ${STATUS_OPTS.find(o => o[0] === fx.status)[1].toLowerCase()}`);
+    return `Applied automatically — ${parts.join('; ')}.`;
   }
 
   function centerHtml(st, actM, actF) {
@@ -674,27 +874,26 @@
   function addAction() {
     const c = UI.composer; if (!c || !c.move) return;
     const st = replay();
-    const targets = c.targets.map(t => ({ s: t.s, i: t.i, lost: t.lost === '' || t.lost == null ? null : Number(t.lost), fainted: !!t.fainted }));
+    const targets = c.targets.map(t => ({ s: t.s, i: t.i, lost: t.immune || t.lost === '' || t.lost == null ? null : Number(t.lost), fainted: !!t.fainted && !t.immune, immune: !!t.immune }));
     const ev = { t: 'move', turn: st.turn, actor: { s: c.side, i: c.i }, move: c.move, crit: !!c.crit, missed: !!c.missed, hits: c.hits || 0, targets, snap: captureSnap(st, { s: c.side, i: c.i }, targets) };
     pushEvent(ev); UI.composer = null; render();
   }
   function openComposer(side, i) {
-    const st = replay();
-    const actives = (s) => (s === 'mine' ? S.myTeam.map((_, k) => k).filter(k => st.mine[k].active) : S.foe.map((_, k) => k).filter(k => S.foe[k].name && st.foe[k].active));
-    const opp = side === 'mine' ? 'foe' : 'mine';
-    UI.composer = { side, i, move: null, targets: actives(opp).length === 1 || S.format === 'singles' ? actives(opp).slice(0, 1).map(k => ({ s: opp, i: k, lost: '' })) : [], crit: false, missed: false, hits: 0 };
+    UI.composer = { side, i, move: null, targets: [], crit: false, missed: false, hits: 0 };
     render();
   }
+  const activeIdx = (st, s) => (s === 'mine' ? S.myTeam.map((_, k) => k).filter(k => st.mine[k].active) : S.foe.map((f, k) => k).filter(k => S.foe[k].name && st.foe[k].active));
+  /** Picks the targets a move implies: none for field/self moves, the single opponent if there's only one, everyone hit for spread moves. */
   function setMove(slug) {
     const c = UI.composer; if (!c) return;
-    c.move = slug || null;
-    if (slug && S.format !== 'singles') {
-      const st = replay(), em = engMove(slug), opp = c.side === 'mine' ? 'foe' : 'mine';
-      if (SPREAD_TARGETS.has(em.target)) {
-        const list = [];
-        (opp === 'foe' ? S.foe.map((f, k) => ({ f, k })).filter(x => x.f.name && st.foe[x.k].active) : S.myTeam.map((_, k) => ({ k })).filter(x => st.mine[x.k].active)).forEach(x => list.push({ s: opp, i: x.k, lost: '' }));
-        c.targets = list;
-      }
+    c.move = slug || null; c.targets = [];
+    if (slug) {
+      const st = replay(), mode = targetMode(slug), opp = c.side === 'mine' ? 'foe' : 'mine', ex = sim.extras.get(slug) || {};
+      const opps = activeIdx(st, opp), allies = activeIdx(st, c.side).filter(k => k !== c.i), mk = (s, k) => ({ s, i: k, lost: '' });
+      if (mode === 'self') c.targets = (ex.flags || []).includes('heal') ? [mk(c.side, c.i)] : [];
+      else if (mode === 'ally') c.targets = allies.length === 1 ? [mk(c.side, allies[0])] : [];
+      else if (mode === 'spread') { c.targets = opps.map(k => mk(opp, k)); if (ex.target === 'all-other-pokemon') allies.forEach(k => c.targets.push(mk(c.side, k))); }
+      else if (mode === 'single') c.targets = opps.length === 1 ? [mk(opp, opps[0])] : [];
     }
     render();
   }
@@ -743,6 +942,10 @@
         const fs = replay().foe[i], same = fs.know.itemKnown && (fs.know.item || '') === (d.item || '');
         pushEvent({ t: 'know', i, what: 'item', value: same ? null : (d.item || null), locked: !same }); render(); break;
       }
+      case 'lock-ability': {
+        const fs = replay().foe[i], same = fs.know.abilityKnown && fs.know.ability === d.ab;
+        pushEvent({ t: 'know', i, what: 'ability', value: same ? null : d.ab, locked: !same }); render(); break;
+      }
       case 'revive': pushEvent({ t: 'set', what: 'revive', side: d.side, i }); render(); break;
       case 'sendout': sendOut(d.side, i); break;
     }
@@ -773,8 +976,7 @@
       case 'status': pushEvent({ t: 'set', what: 'status', side, i, value: t.value }); break;
       case 'boost': pushEvent({ t: 'set', what: 'boost', side, i, key, value: Number(t.value) }); break;
       case 'mega': pushEvent({ t: 'set', what: 'mega', side, i, value: t.value === 'auto' ? null : t.value === 'none' ? false : t.value }); break;
-      case 'ability': pushEvent({ t: 'know', i, what: 'ability', value: t.value || null, locked: !!t.value }); break;
-      case 'field': pushEvent({ t: 'set', what: 'field', key, value: t.value }); break;
+      case 'ability': pushEvent({ t: 'know', i, what: 'ability', value: t.value || null, locked: !!t.value }); break;      case 'field': pushEvent({ t: 'set', what: 'field', key, value: t.value }); break;
       case 'field-t': pushEvent({ t: 'set', what: 'field', key, value: t.checked }); break;
       case 'cond': pushEvent({ t: 'set', what: 'cond', side, key, value: t.checked }); break;
       case 'spikes': pushEvent({ t: 'set', what: 'cond', side, key: 'spikes', value: Number(t.value) }); break;
@@ -793,7 +995,13 @@
     else if (k === 'move-text') {
       const slug = slugify(t.value); if (moveDetails.has(slug)) setMove(slug);
     } else if (k === 'target') {
-      if (t.checked) c.targets.push({ s: t.dataset.s, i: +t.dataset.i, lost: '' }); else c.targets = c.targets.filter(x => !(x.s === t.dataset.s && x.i === +t.dataset.i));
+      const nt = { s: t.dataset.s, i: +t.dataset.i, lost: '' };
+      if (t.checked) { if (targetMode(c.move) === 'single') c.targets = [nt]; else c.targets.push(nt); }
+      else c.targets = c.targets.filter(x => !(x.s === t.dataset.s && x.i === +t.dataset.i));
+      render();
+    } else if (k === 'immune') {
+      const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i);
+      if (tg) { tg.immune = t.checked; if (t.checked) { tg.lost = ''; tg.fainted = false; } }
       render();
     } else if (k === 'lost') { const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i); if (tg) tg.lost = t.value; }
     else if (k === 'faint') { const tg = c.targets.find(x => x.s === t.dataset.s && x.i === +t.dataset.i); if (tg) tg.fainted = t.checked; }

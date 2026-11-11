@@ -1,16 +1,34 @@
-/* Battle-simulator logic: usage-based priors, foe stat narrowing from observed damage / turn order, and
-   matchup scoring. No DOM. Depends on globals from app.js (STAT_KEYS, natureModifier, slugify, moveDetails)
-   and CalcEngine. */
+/* Battle-simulator logic: usage-based priors, foe stat/ability/item narrowing from observed damage, turn order and
+   immunities, and matchup scoring. No DOM. Depends on globals from app.js (STAT_KEYS, natureModifier, slugify,
+   moveDetails) and CalcEngine. */
 const SimEngine = (() => {
-  // How items are handled (kept deliberately simple so it never clutters the calculation):
-  //  * "likely" scenario assumes an item only if it is clearly dominant (>= LIKELY_ITEM usage), or was revealed / inferred.
-  //  * "worst case" scenario assumes the most damaging plausible item (>= WORST_ITEM usage).
+  // How hidden information is handled (kept simple so it never clutters the calculation):
+  //  * "likely" scenario assumes an item/ability only if it is clearly dominant (>= LIKELY_ITEM), or was revealed / inferred.
+  //  * "worst case" scenario assumes the most damaging plausible item/ability (>= WORST_ITEM usage).
   //  * Choice Scarf is only shown as an extra speed tier when its usage is >= SCARF_MIN.
-  //  * Observed damage then re-weights the item odds automatically (see inferFoe).
+  //  * Observed damage, turn order and immunities then re-weight the odds automatically (see inferFoe).
   const LIKELY_ITEM = 0.40, WORST_ITEM = 0.08, SCARF_MIN = 0.08, MAX_SPREADS = 15, MAX_ITEMS = 10;
   const OFFENSE_ITEMS = new Set(['choice-band', 'choice-specs', 'life-orb', 'expert-belt', 'muscle-band', 'wise-glasses', 'punching-glove']);
   const isOffenseItem = s => OFFENSE_ITEMS.has(s) || !!CalcEngine.TYPE_ITEMS[s];
   const isDefenseItem = s => s === 'assault-vest' || s === 'eviolite' || !!CalcEngine.RESIST_BERRIES[s];
+
+  // Abilities that change damage dealt / taken, and ones that grant a type immunity (used for worst cases, risk badges and inference).
+  const OFFENSE_ABILITIES = new Set(['huge-power', 'pure-power', 'adaptability', 'technician', 'guts', 'hustle', 'sheer-force', 'tough-claws', 'iron-fist', 'strong-jaw',
+    'mega-launcher', 'sharpness', 'punk-rock', 'gorilla-tactics', 'solar-power', 'supreme-overlord', 'orichalcum-pulse', 'hadron-engine', 'transistor', 'dragons-maw',
+    'steelworker', 'rocky-payload', 'fire-mane', 'dragonize', 'water-bubble', 'analytic', 'tinted-lens', 'neuroforce', 'sniper', 'reckless']);
+  const DEFENSE_ABILITIES = new Set(['multiscale', 'shadow-shield', 'fur-coat', 'thick-fat', 'ice-scales', 'fluffy', 'filter', 'solid-rock', 'prism-armor', 'marvel-scale',
+    'grass-pelt', 'heatproof', 'punk-rock', 'purifying-salt', 'water-bubble', 'dry-skin']);
+  const IMMUNITY_ABILITIES = { levitate: 'ground', eelevate: 'ground', 'earth-eater': 'ground', 'flash-fire': 'fire', 'well-baked-body': 'fire', 'water-absorb': 'water',
+    'storm-drain': 'water', 'dry-skin': 'water', 'volt-absorb': 'electric', 'lightning-rod': 'electric', 'motor-drive': 'electric', 'sap-sipper': 'grass' };
+  // Speed-doubling abilities: [weather|terrain|status that enables it, multiplier]
+  const SPEED_ABILITIES = { 'swift-swim': ['rain', 2], chlorophyll: ['sun', 2], 'sand-rush': ['sand', 2], 'slush-rush': ['snow', 2], 'surge-surfer': ['electric', 2], 'quick-feet': ['status', 1.5] };
+  const speedAbilityMult = (ab, weather, terrain, status) => {
+    const e = SPEED_ABILITIES[ab]; if (!e) return 1;
+    const [cond, mult] = e;
+    const on = cond === 'rain' ? (weather === 'rain' || weather === 'heavy-rain') : cond === 'sun' ? (weather === 'sun' || weather === 'harsh-sun')
+      : cond === 'status' ? !!status : (cond === 'electric' ? terrain === 'electric' : weather === cond);
+    return on ? mult : 1;
+  };
 
   const pctNum = s => (parseFloat(String(s || '0').replace('%', '')) || 0) / 100;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -31,6 +49,21 @@ const SimEngine = (() => {
         sp: { hp: +s.hp || 0, attack: +s.atk || 0, defense: +s.def || 0, 'special-attack': +s.spa || 0, 'special-defense': +s.spd || 0, speed: +s.spe || 0 },
       })),
     };
+  }
+
+  /** Possible abilities for a Pokémon with their odds: its real abilities weighted by usage (or evenly, hidden ones rarer, when there's no usage data). */
+  function abilityCandidates(mon, pri, know) {
+    if (know && know.abilityKnown) return [{ slug: know.ability, p: 1, hidden: false }];
+    const own = mon.abilities.map(a => ({ slug: a.name, hidden: !!a.hidden }));
+    if (own.length <= 1) return own.map(a => ({ slug: a.slug, p: 1, hidden: a.hidden }));
+    const usage = pri ? pri.abilities : [];
+    const out = own.map(a => {
+      const u = usage.find(x => x.slug === a.slug);
+      return { slug: a.slug, hidden: a.hidden, p: u ? u.p : (usage.length ? 0.01 : (a.hidden ? 0.15 : 1)) };
+    });
+    const sum = out.reduce((s, x) => s + x.p, 0) || 1;
+    out.forEach(x => { x.p /= sum; });
+    return out.sort((a, b) => b.p - a.p);
   }
 
   // ---------- stats ----------
@@ -69,7 +102,7 @@ const SimEngine = (() => {
     return s;
   };
 
-  /** spec: { label, types, base, level, nature, sp, ivs, ability, item, status, hpPct | curHp, boosts, tera, canEvolve, weight, flags, tailwind } */
+  /** spec: { label, types, base, level, nature, sp, ivs, ability, item, status, hpPct | curHp, boosts, tera, canEvolve, weight, flags, tailwind, weather, terrain } */
   function toEngineMon(spec, champ) {
     const stats = {}, natureSigns = {};
     for (const k of STAT_KEYS) {
@@ -80,11 +113,12 @@ const SimEngine = (() => {
     const maxHp = stats.hp;
     let curHp = spec.curHp != null ? spec.curHp : Math.round((spec.hpPct == null ? 100 : spec.hpPct) / 100 * maxHp);
     curHp = clamp(Math.round(curHp), 1, maxHp);
+    let speed = effSpeed(stats.speed, (spec.boosts || {}).speed, spec.tailwind, spec.status === 'par' && spec.ability !== 'quick-feet', spec.item === 'choice-scarf');
+    speed = Math.floor(speed * speedAbilityMult(spec.ability, spec.weather, spec.terrain, spec.status));
     return {
       label: spec.label, types: (spec.types || []).filter(Boolean), teraType: spec.tera || null, level: spec.level, stats,
       boosts: spec.boosts || {}, evs: spec.sp || zeroSp(), natureSigns, ability: spec.ability || null, item: spec.item || null,
-      status: spec.status || '', curHp, canEvolve: !!spec.canEvolve, flags: spec.flags || {}, weight: spec.weight || null,
-      speedFinal: effSpeed(stats.speed, (spec.boosts || {}).speed, spec.tailwind, spec.status === 'par', spec.item === 'choice-scarf'),
+      status: spec.status || '', curHp, canEvolve: !!spec.canEvolve, flags: spec.flags || {}, weight: spec.weight || null, speedFinal: speed,
     };
   }
 
@@ -94,16 +128,17 @@ const SimEngine = (() => {
   /** The build we assume for a foe when nothing has been learned yet (or the posterior's best guess when it has). */
   function assumedBuild(mon, pri, know) {
     know = know || {};
-    const first = mon.abilities[0] ? mon.abilities[0].name : null;
+    const cands = abilityCandidates(mon, pri, know);
+    const topAb = cands[0] ? cands[0].slug : null;
     if (know.map) return Object.assign({ itemP: know.map.itemP || 0 }, know.map, {
-      ability: know.abilityKnown ? know.ability : (know.map.ability || (top(pri && pri.abilities) || {}).slug || first),
+      ability: know.abilityKnown ? know.ability : (know.map.ability || topAb),
       item: know.itemKnown ? know.item : know.map.item,
     });
-    if (!pri) return { nature: 'hardy', sp: zeroSp(), ability: know.abilityKnown ? know.ability : first, item: know.itemKnown ? know.item : null, itemP: 0 };
-    const nat = top(pri.natures), spr = top(pri.spreads), it = top(pri.items), ab = top(pri.abilities);
+    if (!pri) return { nature: 'hardy', sp: zeroSp(), ability: know.abilityKnown ? know.ability : (cands.length === 1 ? topAb : null), item: know.itemKnown ? know.item : null, itemP: 0 };
+    const nat = top(pri.natures), spr = top(pri.spreads), it = top(pri.items);
     return {
       nature: nat ? nat.name : 'hardy', sp: spr ? Object.assign(zeroSp(), spr.sp) : zeroSp(),
-      ability: know.abilityKnown ? know.ability : (ab ? ab.slug : first),
+      ability: know.abilityKnown ? know.ability : topAb,
       item: know.itemKnown ? know.item : (it && it.p >= LIKELY_ITEM ? it.slug : null), itemP: it ? it.p : 0,
     };
   }
@@ -113,22 +148,32 @@ const SimEngine = (() => {
     return 'hardy';
   }
 
+  /** The most extreme plausible ability from a set (>= WORST_ITEM odds), or null. */
+  function extremeAbility(cands, set) {
+    return (cands || []).filter(c => c.p >= WORST_ITEM && set.has(c.slug)).sort((a, b) => b.p - a.p)[0] || null;
+  }
+
   /** Scenario builds used for ranges: 'likely', 'maxOff' (key), 'minBulk', 'maxBulk' (key). */
   function scenarioBuild(base, pri, know, scenario, key, mon, champ) {
     const b = Object.assign({}, assumedBuild(mon, pri, know));
     b.sp = Object.assign(zeroSp(), b.sp);
     const top32 = champ ? 32 : 252;
+    const cands = abilityCandidates(mon, pri, know);
+    const abilityLocked = !!(know && know.abilityKnown);
     if (scenario === 'maxOff') {
       b.sp[key] = top32; b.nature = plusNatureFor(key);
       if (!(know && know.itemKnown)) {
         const best = (pri ? pri.items : []).filter(i => i.p >= WORST_ITEM && isOffenseItem(i.slug)).sort((a, c) => c.p - a.p)[0];
         if (best) b.item = best.slug;
       }
+      if (!abilityLocked) { const ab = extremeAbility(cands, OFFENSE_ABILITIES); if (ab) b.ability = ab.slug; }
     } else if (scenario === 'minBulk') {
       b.sp.hp = 0; b.sp.defense = 0; b.sp['special-defense'] = 0; b.nature = 'hardy';
       if (!(know && know.itemKnown) && b.item && isDefenseItem(b.item)) b.item = null;
+      if (!abilityLocked && DEFENSE_ABILITIES.has(b.ability) && !(know && know.map && know.map.ability === b.ability)) b.ability = null;
     } else if (scenario === 'maxBulk') {
       b.sp.hp = top32; b.sp[key] = top32; b.nature = plusNatureFor(key);
+      if (!abilityLocked) { const ab = extremeAbility(cands, DEFENSE_ABILITIES); if (ab) b.ability = ab.slug; }
     }
     return b;
   }
@@ -144,19 +189,21 @@ const SimEngine = (() => {
     return sums;
   };
   const FAST = { fast: true };
+  const withAbility = (mon, ab) => (ab ? Object.assign({}, mon, { ability: ab }) : mon);
 
   /**
    * Observation kinds (built by the UI from the battle log, each carrying a frozen snapshot of the conditions):
-   *  { kind:'offense', attacker:engineMon(foe, stats filled with assumptions), defender:engineMon(mine), move, field, dmg, ko, remaining }
+   *  { kind:'offense', attacker:engineMon(foe), defender:engineMon(mine), move, field, dmg, ko, remaining }
    *  { kind:'bulk',    attacker:engineMon(mine), defender:engineMon(foe template), move, field, dropPct, beforePct, ko }
-   *  { kind:'order',   mySpeed, foeFirst, trickRoom, foeBoost, foeTailwind, foePar }
+   *  { kind:'order',   mySpeed, foeFirst, trickRoom, foeBoost, foeTailwind, foePar, weather, terrain, foeStatus }
+   *  { kind:'immune',  attacker:engineMon(mine), defender:engineMon(foe template), move, field }   // "it had no effect"
    */
-  function evalOffense(o, val, item) {
+  function evalOffense(o, val, item, ab) {
     if (!o.atkKey) {
       const r0 = CalcEngine.calc(o.attacker, o.defender, o.move, Object.assign({}, o.field, FAST));
       o.atkKey = r0.atkKey || (o.move.category === 'physical' ? 'attack' : 'special-attack');
     }
-    const atk = Object.assign({}, o.attacker, { stats: Object.assign({}, o.attacker.stats, { [o.atkKey]: val }), item });
+    const atk = withAbility(Object.assign({}, o.attacker, { stats: Object.assign({}, o.attacker.stats, { [o.atkKey]: val }), item }), ab);
     const r = CalcEngine.calc(atk, o.defender, o.move, Object.assign({}, o.field, FAST));
     if (r.immune || r.noDamage) return false;
     const sums = sumSet(r.hitRolls);
@@ -164,12 +211,12 @@ const SimEngine = (() => {
     return sums.has(o.dmg);
   }
 
-  function bulkSums(o, defVal, item) {
+  function bulkSums(o, defVal, item, ab) {
     if (!o.defKey) {
       const r0 = CalcEngine.calc(o.attacker, o.defender, o.move, Object.assign({}, o.field, FAST));
       o.defKey = r0.defKey || (o.move.category === 'physical' ? 'defense' : 'special-defense');
     }
-    const foe = Object.assign({}, o.defender, { stats: Object.assign({}, o.defender.stats, { [o.defKey]: defVal }), item });
+    const foe = withAbility(Object.assign({}, o.defender, { stats: Object.assign({}, o.defender.stats, { [o.defKey]: defVal }), item }), ab);
     foe.curHp = o.beforePct >= 99.5 ? foe.stats.hp : Math.max(1, foe.stats.hp - 1);
     const r = CalcEngine.calc(o.attacker, foe, o.move, Object.assign({}, o.field, FAST));
     if (r.immune || r.noDamage) return null;
@@ -180,34 +227,47 @@ const SimEngine = (() => {
     if (o.ko) return Math.max(...sums) / H * 100 >= o.beforePct - 0.5;
     return sums.some(s => Math.abs(s / H * 100 - o.dropPct) <= 1.0);
   }
-  function evalOrder(o, speedVal, item) {
-    const foe = effSpeed(speedVal, o.foeBoost, o.foeTailwind, o.foePar, item === 'choice-scarf');
+  function evalOrder(o, speedVal, item, ab) {
+    let foe = effSpeed(speedVal, o.foeBoost, o.foeTailwind, o.foePar && ab !== 'quick-feet', item === 'choice-scarf');
+    foe = Math.floor(foe * speedAbilityMult(ab, o.weather, o.terrain, o.foeStatus));
     if (foe === o.mySpeed) return true;
     return (o.trickRoom ? foe < o.mySpeed : foe > o.mySpeed) === o.foeFirst;
   }
+  function evalImmune(o, ab) {
+    const r = CalcEngine.calc(o.attacker, withAbility(o.defender, ab), o.move, Object.assign({}, o.field, FAST));
+    return !!r.immune;
+  }
 
   /**
-   * Narrow a foe's hidden build. Returns
-   *  { n, builds:[{nature, sp, p}], items:[{slug,p}], map:{nature,sp,item,itemP}|null, ranges:{key:{min,max,vals}}, impossible }
+   * Narrow a foe's hidden build (stats, item, ability). Returns
+   *  { n, builds:[{nature, sp, p}], items:[{slug,p}], abilities:[{slug,p}], map:{nature,sp,item,itemP,ability,abilityP}|null,
+   *    ranges:{key:{min,max,vals}}, impossible }
+   * ctx: { champ, level, pri, know, abilities:[{slug,p}] }
    */
   function inferFoe(foe, obsList, ctx) {
-    const out = { n: obsList.length, builds: [], items: [], map: null, ranges: {}, impossible: false };
+    const out = { n: obsList.length, builds: [], items: [], abilities: [], map: null, ranges: {}, impossible: false };
     if (!obsList.length) return out;
     const { champ, level, pri, know } = ctx;
     const base = foe.base;
-    const offense = obsList.filter(o => o.kind === 'offense'), bulk = obsList.filter(o => o.kind === 'bulk'), order = obsList.filter(o => o.kind === 'order');
+    const offense = obsList.filter(o => o.kind === 'offense'), bulk = obsList.filter(o => o.kind === 'bulk'),
+      order = obsList.filter(o => o.kind === 'order'), immune = obsList.filter(o => o.kind === 'immune');
     const memo = new Map();
     const cached = (key, fn) => { if (!memo.has(key)) memo.set(key, fn()); return memo.get(key); };
 
     // Which attack keys / defence keys the observations touch (resolved lazily by running one calc each).
-    for (const o of offense) evalOffense(o, o.attacker.stats[o.atkKey || 'attack'], o.attacker.item);
-    for (const o of bulk) bulkSums(o, o.defender.stats[o.defKey || 'defense'], o.defender.item);
+    for (const o of offense) evalOffense(o, o.attacker.stats[o.atkKey || 'attack'], o.attacker.item, null);
+    for (const o of bulk) bulkSums(o, o.defender.stats[o.defKey || 'defense'], o.defender.item, null);
     const atkKeys = [...new Set(offense.map(o => o.atkKey))];
     const defKeys = [...new Set(bulk.map(o => o.defKey))];
 
-    const offenseOk = (o, idx, val, item) => cached(`o${idx}|${val}|${item}`, () => evalOffense(o, val, item));
-    const bulkSumsC = (o, idx, defVal, item) => cached(`b${idx}|${defVal}|${item}`, () => bulkSums(o, defVal, item));
-    const orderOk = (o, idx, val, item) => cached(`s${idx}|${val}|${item}`, () => evalOrder(o, val, item));
+    const offenseOk = (o, idx, val, item, ab) => cached(`o${idx}|${val}|${item}|${ab}`, () => evalOffense(o, val, item, ab));
+    const bulkSumsC = (o, idx, defVal, item, ab) => cached(`b${idx}|${defVal}|${item}|${ab}`, () => bulkSums(o, defVal, item, ab));
+    const orderOk = (o, idx, val, item, ab) => cached(`s${idx}|${val}|${item}|${ab}`, () => evalOrder(o, val, item, ab));
+    const immuneOk = (o, idx, ab) => cached(`i${idx}|${ab}`, () => evalImmune(o, ab));
+
+    // Ability hypotheses: each candidate (with usage odds), minus any contradicted by an "it had no effect" observation.
+    const allAbilities = ctx.abilities && ctx.abilities.length ? ctx.abilities : [{ slug: null, p: 1 }];
+    const abilities = allAbilities.filter(a => immune.every((o, i) => immuneOk(o, i, a.slug)));
 
     // Item options considered for the hypothesis grid.
     const usageItems = pri ? pri.items.slice().sort((a, b) => b.p - a.p).slice(0, MAX_ITEMS) : [];
@@ -218,85 +278,109 @@ const SimEngine = (() => {
       (pri ? usageItems.filter(i => isDefenseItem(i.slug)).map(i => i.slug) : ['assault-vest']).concat(foe.canEvolve ? ['eviolite'] : []));
     const spdItems = knownItem !== undefined ? [knownItem] : [null].concat(pri ? usageItems.filter(i => i.slug === 'choice-scarf' && i.p >= SCARF_MIN).map(i => i.slug) : ['choice-scarf']);
 
-    // ----- unconstrained ranges (every legal stat value) -----
-    for (const key of atkKeys) {
-      const feasible = new Set();
-      for (const c of statCandidates(base[key], key, champ, level)) {
-        for (const item of offItems) {
-          if (offense.every((o, i) => o.atkKey !== key || offenseOk(o, i, c.val, item))) { feasible.add(c.val); break; }
-        }
-      }
-      out.ranges[key] = rangeOf(feasible);
-    }
-    if (bulk.length) {
-      const hpVals = statCandidates(base.hp, 'hp', champ, level).map(c => c.val);
-      const feasibleH = new Set(), feasibleDef = {};
-      for (const k of defKeys) feasibleDef[k] = new Set();
-      for (const item of defItems) {
-        const defOkByKey = {};
-        for (const key of defKeys) {
-          defOkByKey[key] = statCandidates(base[key], key, champ, level).map(c => c.val);
-        }
-        // sums depend only on (defVal, item); H only enters through the percentage check
-        for (const H of hpVals) {
-          let allKeysOk = true; const okVals = {};
-          for (const key of defKeys) {
-            okVals[key] = defOkByKey[key].filter(dv => bulk.every((o, i) => o.defKey !== key || bulkFits(o, bulkSumsC(o, i, dv, item), H)));
-            if (!okVals[key].length) { allKeysOk = false; break; }
+    // ----- unconstrained ranges (every legal stat value), per ability hypothesis -----
+    const rangesFor = ab => {
+      const r = {};
+      for (const key of atkKeys) {
+        const feasible = new Set();
+        for (const c of statCandidates(base[key], key, champ, level)) {
+          for (const item of offItems) {
+            if (offense.every((o, i) => o.atkKey !== key || offenseOk(o, i, c.val, item, ab))) { feasible.add(c.val); break; }
           }
-          if (allKeysOk) { feasibleH.add(H); for (const key of defKeys) okVals[key].forEach(v => feasibleDef[key].add(v)); }
         }
+        r[key] = rangeOf(feasible);
       }
-      out.ranges.hp = rangeOf(feasibleH);
-      for (const key of defKeys) out.ranges[key] = rangeOf(feasibleDef[key]);
-    }
-    if (order.length) {
-      const feasible = new Set();
-      for (const c of statCandidates(base.speed, 'speed', champ, level)) {
-        for (const item of spdItems) if (order.every((o, i) => orderOk(o, i, c.val, item))) { feasible.add(c.val); break; }
+      if (bulk.length) {
+        const hpVals = statCandidates(base.hp, 'hp', champ, level).map(c => c.val);
+        const feasibleH = new Set(), feasibleDef = {};
+        for (const k of defKeys) feasibleDef[k] = new Set();
+        for (const item of defItems) {
+          const defVals = {};
+          for (const key of defKeys) defVals[key] = statCandidates(base[key], key, champ, level).map(c => c.val);
+          // sums depend only on (defVal, item, ability); H only enters through the percentage check
+          for (const H of hpVals) {
+            let allKeysOk = true; const okVals = {};
+            for (const key of defKeys) {
+              okVals[key] = defVals[key].filter(dv => bulk.every((o, i) => o.defKey !== key || bulkFits(o, bulkSumsC(o, i, dv, item, ab), H)));
+              if (!okVals[key].length) { allKeysOk = false; break; }
+            }
+            if (allKeysOk) { feasibleH.add(H); for (const key of defKeys) okVals[key].forEach(v => feasibleDef[key].add(v)); }
+          }
+        }
+        r.hp = rangeOf(feasibleH);
+        for (const key of defKeys) r[key] = rangeOf(feasibleDef[key]);
       }
-      out.ranges.speed = rangeOf(feasible);
+      if (order.length) {
+        const feasible = new Set();
+        for (const c of statCandidates(base.speed, 'speed', champ, level)) {
+          for (const item of spdItems) if (order.every((o, i) => orderOk(o, i, c.val, item, ab))) { feasible.add(c.val); break; }
+        }
+        r.speed = rangeOf(feasible);
+      }
+      return r;
+    };
+    const perAb = abilities.map(a => ({ a, r: rangesFor(a.slug) }));
+    const viable = perAb.filter(x => Object.values(x.r).every(rg => rg.vals.length));
+    const pool = viable.length ? viable : perAb;
+    const keys = new Set(); pool.forEach(x => Object.keys(x.r).forEach(k => keys.add(k)));
+    for (const k of keys) {
+      const union = new Set(); pool.forEach(x => (x.r[k] ? x.r[k].vals : []).forEach(v => union.add(v)));
+      out.ranges[k] = rangeOf(union);
     }
-    out.impossible = Object.values(out.ranges).some(r => !r.vals.length);
+    out.impossible = !abilities.length || (!viable.length && Object.keys(out.ranges).length > 0 && Object.values(out.ranges).some(r => !r.vals.length));
+    // Without a usage-based posterior, the ability odds are just the prior limited to the hypotheses that survive.
+    const priorAb = (viable.length ? viable.map(x => x.a) : abilities);
+    const priorSum = priorAb.reduce((s, a) => s + a.p, 0) || 1;
+    out.abilities = priorAb.map(a => ({ slug: a.slug, p: a.p / priorSum })).sort((a, b) => b.p - a.p);
 
     // ----- posterior over the builds players actually run (usage data) -----
-    if (pri && pri.spreads.length) {
+    if (pri && pri.spreads.length && !out.impossible) {
       const spreads = pri.spreads.slice(0, MAX_SPREADS);
       const natures = (pri.natures.filter(n => n.p >= 0.01).slice(0, 8)); if (!natures.length) natures.push({ name: 'hardy', p: 1 });
       const itemPrior = knownItem !== undefined ? [{ slug: knownItem, p: 1 }] : usageItems.slice();
       if (knownItem === undefined) { const rest = Math.max(0.0001, 1 - usageItems.reduce((s, i) => s + i.p, 0)); itemPrior.push({ slug: null, p: rest }); }
-      const byBuild = new Map(), byItem = new Map(); let total = 0;
+      const byBuild = new Map(), byItem = new Map(), byAbility = new Map(); let total = 0;
       spreads.forEach((sp, si) => natures.forEach(nat => {
         const stats = {};
         for (const k of STAT_KEYS) stats[k] = statFromMod(base[k] || 0, k, sp.sp[k] || 0, natureModifier(nat.name, k), champ, level);
-        for (const it of itemPrior) {
-          const item = it.slug;
+        for (const it of itemPrior) for (const a of abilities) {
+          const item = it.slug, ab = a.slug;
           let ok = true;
-          for (let i = 0; ok && i < offense.length; i++) ok = offenseOk(offense[i], i, stats[offense[i].atkKey], item);
-          for (let i = 0; ok && i < bulk.length; i++) {
-            const o = bulk[i]; ok = bulkFits(o, bulkSumsC(o, i, stats[o.defKey], item), stats.hp);
-          }
-          for (let i = 0; ok && i < order.length; i++) ok = orderOk(order[i], i, stats.speed, item);
+          for (let i = 0; ok && i < offense.length; i++) ok = offenseOk(offense[i], i, stats[offense[i].atkKey], item, ab);
+          for (let i = 0; ok && i < bulk.length; i++) { const o = bulk[i]; ok = bulkFits(o, bulkSumsC(o, i, stats[o.defKey], item, ab), stats.hp); }
+          for (let i = 0; ok && i < order.length; i++) ok = orderOk(order[i], i, stats.speed, item, ab);
           if (!ok) continue;
-          const w = sp.p * nat.p * it.p; total += w;
+          const w = sp.p * nat.p * it.p * a.p; total += w;
           const bk = si + '|' + nat.name;
           byBuild.set(bk, (byBuild.get(bk) || { nature: nat.name, sp: sp.sp, w: 0 })); byBuild.get(bk).w += w;
           byItem.set(item, (byItem.get(item) || 0) + w);
+          byAbility.set(ab, (byAbility.get(ab) || 0) + w);
         }
       }));
       if (total > 0) {
         out.builds = Array.from(byBuild.values()).map(b => ({ nature: b.nature, sp: b.sp, p: b.w / total })).sort((a, b) => b.p - a.p).slice(0, 6);
         out.items = Array.from(byItem.entries()).map(([slug, w]) => ({ slug, p: w / total })).sort((a, b) => b.p - a.p);
-        const best = out.builds[0], bestItem = out.items[0];
-        out.map = { nature: best.nature, sp: best.sp, item: bestItem && bestItem.p >= LIKELY_ITEM ? bestItem.slug : null, itemP: bestItem ? bestItem.p : 0 };
+        out.abilities = Array.from(byAbility.entries()).map(([slug, w]) => ({ slug, p: w / total })).sort((a, b) => b.p - a.p);
+        const best = out.builds[0], bestItem = out.items[0], bestAb = out.abilities[0];
+        out.map = {
+          nature: best.nature, sp: best.sp, item: bestItem && bestItem.p >= LIKELY_ITEM ? bestItem.slug : null, itemP: bestItem ? bestItem.p : 0,
+          ability: bestAb && bestAb.slug && bestAb.p >= 0.5 ? bestAb.slug : null, abilityP: bestAb ? bestAb.p : 0,
+        };
       }
     }
+    // a lone surviving ability is as good as known even with no usage data
+    if (!out.map && out.abilities.length === 1 && out.abilities[0].slug && allAbilities.length > 1) out.map = null;
     return out;
   }
 
   function rangeOf(set) {
     const vals = Array.from(set).sort((a, b) => a - b);
     return { vals, min: vals[0], max: vals[vals.length - 1] };
+  }
+
+  /** Abilities (with odds >= minP) that would make `moveType` do nothing, e.g. Levitate vs Ground. */
+  function immunityRisks(candidates, moveType, minP = WORST_ITEM) {
+    return (candidates || []).filter(c => c.p >= minP && IMMUNITY_ABILITIES[c.slug] === moveType);
   }
 
   // ---------- damage helpers used by matchup scoring and the live panel ----------
@@ -357,6 +441,7 @@ const SimEngine = (() => {
     return { mine, foe, speed, score, label: labelFor(score), tM, tF, mineSpeed: mf, foeSpeed: ff };
   }
 
-  return { priors, statFromMod, statCandidates, toEngineMon, assumedBuild, scenarioBuild, inferFoe, moveResult, foeMoveList, matchup, labelFor,
-    effSpeed, isOffenseItem, isDefenseItem, hitsToKO, zeroSp, plusNatureFor, LIKELY_ITEM, WORST_ITEM, SCARF_MIN };
+  return { priors, abilityCandidates, immunityRisks, statFromMod, statCandidates, toEngineMon, assumedBuild, scenarioBuild, inferFoe, moveResult, foeMoveList, matchup, labelFor,
+    effSpeed, speedAbilityMult, isOffenseItem, isDefenseItem, hitsToKO, zeroSp, plusNatureFor, IMMUNITY_ABILITIES, OFFENSE_ABILITIES, DEFENSE_ABILITIES,
+    LIKELY_ITEM, WORST_ITEM, SCARF_MIN };
 })();
