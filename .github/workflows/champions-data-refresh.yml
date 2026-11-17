@@ -8,9 +8,15 @@ on:
 permissions:
   contents: write
 
+# One data refresh at a time: the scrape takes over an hour, and the PokeAPI refresh also pushes to main.
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@v4
 
@@ -20,12 +26,21 @@ jobs:
 
       - name: Commit changes
         run: |
-          if git diff --quiet -- champions-data-raw/pokebase-dex.json champions-data-raw/pokebase-dex.data.js champions-data-raw/pokebase-usage.json champions-data-raw/pokebase-usage.data.js champions-items.data.js; then
+          FILES="champions-data-raw/pokebase-dex.json champions-data-raw/pokebase-dex.data.js champions-data-raw/pokebase-usage.json champions-data-raw/pokebase-usage.data.js champions-items.data.js"
+          if git diff --quiet -- $FILES; then
             echo "No changes."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add champions-data-raw/pokebase-dex.json champions-data-raw/pokebase-dex.data.js champions-data-raw/pokebase-usage.json champions-data-raw/pokebase-usage.data.js champions-items.data.js
+          git add $FILES
           git commit -m "Champions data refresh"
-          git push
+          # main may have moved while the scrape ran (e.g. the PokeAPI refresh pushed first), so rebase and retry
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            echo "Push attempt $attempt failed; retrying..."
+            git rebase --abort 2>/dev/null || true
+            sleep $((attempt * 5))
+          done
+          echo "Could not push after 5 attempts" >&2
+          exit 1
