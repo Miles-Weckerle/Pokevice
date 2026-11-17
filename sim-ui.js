@@ -67,10 +67,10 @@
     return 'field';   // users-field, opponents-field, entire-field, user-and-allies, all-allies, all-pokemon, fainting-pokemon
   }
 
-  const defaultState = () => ({ game: CHAMPIONS_VG, format: 'doubles', phase: 'setup', teamId: null, myTeam: [], foe: [0, 1, 2, 3, 4, 5].map(() => ({ name: null })), leadsMine: [], backMine: [], leadsFoe: [], log: [] });
+  const defaultState = () => ({ game: CHAMPIONS_VG, format: 'doubles', phase: 'setup', teamId: null, myTeam: [], foe: [0, 1, 2, 3, 4, 5].map(() => ({ name: null })), leadsMine: [], backMine: [], leadsFoe: [], log: [], autoResidual: true });
   let S = defaultState();
   const sim = { ready: false, roster: [], rosterMap: new Map(), extras: new Map(), loading: false, error: null };
-  const UI = { megaClosed: new Set(), composer: null, cell: null, edit: null, openPicker: null, matrix: null, matrixKey: '', inferCache: null, msg: '' };
+  const UI = { open: {}, megaOpen: new Set(), composer: null, cell: null, edit: null, openPicker: null, matrix: null, matrixKey: '', inferCache: null, msg: '' };
   let root = null;
 
   const isChamp = () => S.game === CHAMPIONS_VG;
@@ -297,8 +297,59 @@
       if (BREAKS_SCREENS.has(slug) && tr.s !== me && tr.lost > 0) for (const k of ['reflect', 'lightScreen', 'auroraVeil']) setCondValue(st, tr.s, k, false, 0, '');
     }
   }
+  // ----- end-of-turn damage / healing -----
+  // Poison (1/8), Toxic (n/16), burn (1/16; 1/8 before Gen 7), Sandstorm (and Hail before Gen 9), Leftovers / Black Sludge, Grassy Terrain, plus the
+  // weather abilities that matter (Poison Heal, Dry Skin, Solar Power, Rain Dish, Ice Body). Opponents only use what's known: their item must be
+  // locked in, and their ability counts when it's locked or overwhelmingly likely. Switch it off with "Apply end-of-turn damage" if it guesses wrong.
+  const SAND_SAFE = new Set(['rock', 'ground', 'steel']), HAIL_SAFE = new Set(['ice']);
+  const SAND_SAFE_AB = new Set(['sand-veil', 'sand-rush', 'sand-force', 'overcoat', 'magic-guard']);
+  const HAIL_SAFE_AB = new Set(['ice-body', 'snow-cloak', 'slush-rush', 'overcoat', 'magic-guard']);
+  function pokeFacts(st, side, i) {
+    const p = side === 'mine' ? st.mine[i] : st.foe[i];
+    if (side === 'mine') return { p, types: mineMonOf(i, p).types || [], ability: abilityOfActive(st, 'mine', i), item: S.myTeam[i].item || null };
+    return { p, types: foeMonOf(i, p).types || [], ability: foeAssumedAbility(i, p), item: p.know.itemKnown ? p.know.item : null };
+  }
+  function applyResiduals(st) {
+    const notes = [], gen = gameGen();
+    for (const side of ['mine', 'foe']) {
+      (side === 'mine' ? st.mine : st.foe).forEach((p, i) => {
+        if (!p.active || p.fainted || (side === 'foe' && !S.foe[i].name)) return;
+        const f = pokeFacts(st, side, i), types = f.types, ab = f.ability, item = f.item, w = st.field.weather;
+        const guard = ab === 'magic-guard';
+        const maxHp = side === 'mine' ? maxHpOf(i, st) : 100;
+        let net = 0; const why = [];
+        // fraction of max HP: positive = damage, negative = healing
+        const add = (frac, label) => { if (!frac) return; const amt = side === 'mine' ? Math.max(1, Math.floor(maxHp * Math.abs(frac))) : Math.abs(frac) * 100; net += Math.sign(frac) * amt; why.push(label); };
+        if (w === 'sand' && !guard && !types.some(t => SAND_SAFE.has(t)) && !SAND_SAFE_AB.has(ab) && item !== 'safety-goggles') add(1 / 16, 'sandstorm');
+        if (w === 'snow' && gen <= 8 && !guard && !types.some(t => HAIL_SAFE.has(t)) && !HAIL_SAFE_AB.has(ab) && item !== 'safety-goggles') add(1 / 16, 'hail');
+        if (!guard) {
+          if ((w === 'sun' || w === 'harsh-sun') && (ab === 'solar-power' || ab === 'dry-skin')) add(ab === 'dry-skin' ? 1 / 8 : 1 / 8, ab === 'dry-skin' ? 'Dry Skin' : 'Solar Power');
+        }
+        if (w === 'rain' || w === 'heavy-rain') { if (ab === 'dry-skin') add(-1 / 8, 'Dry Skin'); else if (ab === 'rain-dish') add(-1 / 16, 'Rain Dish'); }
+        if (w === 'snow' && ab === 'ice-body') add(-1 / 16, 'Ice Body');
+        const grounded = !types.includes('flying') && ab !== 'levitate';
+        if (st.field.terrain === 'grassy' && grounded) add(-1 / 16, 'Grassy Terrain');
+        if (item === 'leftovers') add(-1 / 16, 'Leftovers');
+        if (item === 'black-sludge') { if (types.includes('poison')) add(-1 / 16, 'Black Sludge'); else if (!guard) add(1 / 8, 'Black Sludge'); }
+        if (p.status === 'tox') p.toxN = (p.toxN || 0) + 1; else p.toxN = 0;
+        if (p.status === 'psn' || p.status === 'tox') {
+          if (ab === 'poison-heal') add(-1 / 8, 'Poison Heal');
+          else if (!guard) add(p.status === 'tox' ? Math.min(15, p.toxN) / 16 : 1 / 8, p.status === 'tox' ? `Toxic ×${p.toxN}` : 'poison');
+        }
+        if (p.status === 'brn' && !guard) add((gen >= 7 ? 1 / 16 : 1 / 8) / (ab === 'heatproof' ? 2 : 1), 'burn');
+        if (!net) return;
+        const name = side === 'mine' ? (S.myTeam[i].nickname || monDisplayName(mineMonOf(i, p))) : monDisplayName(foeMonOf(i, p));
+        if (side === 'mine') p.hp = clamp(Math.round(p.hp - net), 0, maxHp); else p.hpPct = clamp(Math.round((p.hpPct - net) * 10) / 10, 0, 100);
+        const gone = side === 'mine' ? p.hp <= 0 : p.hpPct <= 0;
+        if (gone) { p.fainted = true; p.active = false; }
+        const mag = Math.round(Math.abs(net) * 10) / 10;
+        notes.push(`${name} ${net < 0 ? '+' : '−'}${mag}${side === 'mine' ? ' HP' : '%'} (${why.join(', ')})${gone ? ' — fainted' : ''}`);
+      });
+    }
+    return notes;
+  }
   function initialState() {
-    const st = { turn: 1, field: { weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false }, side: { mine: { conds: emptyConds() }, foe: { conds: emptyConds() } }, mine: [], foe: [], timers: {} };
+    const st = { turn: 1, resNotes: new Map(), field: { weather: '', terrain: '', trickRoom: false, gravity: false, magicRoom: false, wonderRoom: false }, side: { mine: { conds: emptyConds() }, foe: { conds: emptyConds() } }, mine: [], foe: [], timers: {} };
     S.myTeam.forEach((_, i) => st.mine.push(newMine(i)));
     S.foe.forEach((f, i) => { const fs = newFoe(); fs.active = S.leadsFoe.includes(i); st.foe.push(fs); });
     S.leadsMine.forEach(i => autoField(st, 'mine', i));
@@ -311,7 +362,10 @@
   function applyEvent(st, ev) {
     const part = (s, i) => (s === 'mine' ? st.mine[i] : st.foe[i]);
     switch (ev.t) {
-      case 'turn': st.turn++; tickTimers(st); break;
+      case 'turn': {
+        if (S.autoResidual !== false) { const notes = applyResiduals(st); if (notes.length) st.resNotes.set(ev, notes); }
+        st.turn++; tickTimers(st); break;
+      }
       case 'move': {
         if (ev.actor.s === 'foe' && ev.move && !st.foe[ev.actor.i].revealed.includes(ev.move)) st.foe[ev.actor.i].revealed.push(ev.move);
         for (const tr of ev.targets) {
@@ -343,7 +397,7 @@
       case 'know': { const k = st.foe[ev.i].know; if (ev.what === 'item') { k.item = ev.value; k.itemKnown = ev.value !== undefined && ev.locked !== false; } else { k.ability = ev.value; k.abilityKnown = ev.locked !== false; } break; }
       case 'switch': {
         const side = ev.side, out = part(side, ev.out), inn = part(side, ev.in);
-        if (out) { out.active = false; out.boosts = emptyBoosts(); }
+        if (out) { out.active = false; out.boosts = emptyBoosts(); out.toxN = 0; }
         if (inn) { inn.active = true; inn.fainted = false; }
         autoField(st, side, ev.in);
         autoIntimidate(st, side, ev.in);
@@ -493,7 +547,7 @@
     }).join('') : `<div class="sm-dim">${(typeof teams !== 'undefined' ? teams : []).length ? 'Choose one of your saved teams.' : 'No saved teams yet — build one in the Team Builder first.'}</div>`;
     const foeRows = S.foe.map((f, i) => {
       const mon = rosterMon(f.name);
-      return `<div class="sm-foe-row">${sprite(mon, 'sm-sprite-s')}<div class="calc-picker"><input type="text" data-picker="foe" data-i="${i}" placeholder="Opponent Pokémon ${i + 1}…" value="${esc(mon ? monDisplayName(mon) : '')}" autocomplete="off"><div class="option-dropdown"></div></div>${mon ? `<span class="sm-types">${mon.types.map(tbadge).join('')}</span>` : ''}</div>`;
+      return `<div class="sm-foe-row">${mon ? sprite(mon, 'sm-sprite-s') : '<span class="sm-sprite-s"></span>'}<div class="calc-picker"><input type="text" data-picker="foe" data-i="${i}" placeholder="Opponent Pokémon ${i + 1}…" value="${esc(mon ? monDisplayName(mon) : '')}" autocomplete="off"><div class="option-dropdown"></div></div>${mon ? `<span class="sm-types">${mon.types.map(tbadge).join('')}</span>` : ''}</div>`;
     }).join('');
     const ready = S.myTeam.length && S.foe.filter(f => f.name).length;
     return `<div class="sm-setup">
@@ -634,7 +688,7 @@
     const moveRows = moveRowsFor(m, true);
     // what-if: the same moves if this Pokémon Mega Evolves (only while its side still can)
     const megaBoxes = megaChoices(st, 'mine', i).map(v => {
-      const mM = mineEngine(i, withMega(ms, v), st.side.mine.conds), key = `mine:${i}:${v.name}`, closed = UI.megaClosed.has(key);
+      const mM = mineEngine(i, withMega(ms, v), st.side.mine.conds), key = `mine:${i}:${v.name}`, closed = !UI.megaOpen.has(key);
       return `<div class="sm-megabox"><div class="sm-mega-head"><b>Mega Evolve → ${esc(monDisplayName(v))}</b>
         <span class="sm-types">${v.types.map(tbadge).join('')}</span>
         <span class="sm-dim">${esc(formatName(mM.ability || '—'))} · Spe ${mM.speedFinal} <small>(now ${m.speedFinal})</small></span>
@@ -668,14 +722,20 @@
     const abLocked = fs.know.abilityKnown, abNarrowed = !!(inf && inf.abilities && inf.abilities.length && inf.n);
     const abTop = abOdds[0];
     const ab = abLocked ? fs.know.ability : (abOdds.length === 1 || (abTop && abTop.p >= 0.6) ? abTop.slug : null);
-    const abChips = abOdds.length > 1 || abLocked ? abOdds.map(a => {
-      const info = abilityDetails.get(a.slug) || CHAMPIONS_ABILITY_OVERRIDES[a.slug] || {};
-      return `<button type="button" class="sm-chip${abLocked && fs.know.ability === a.slug ? ' on' : ''}" data-act="lock-ability" data-i="${j}" data-ab="${esc(a.slug)}" title="${esc(info.shortEffect || '')} (click to lock as their ability)">${esc(formatName(a.slug))} <i>${Math.round(a.p * 100)}%</i></button>`;
-    }).join('') : '';
-    const items = (inf && inf.items && inf.items.length ? inf.items.slice(0, 5).map(x => ({ slug: x.slug, p: x.p, inferred: true })) : (pri ? pri.items.slice().sort((a, b) => b.p - a.p).slice(0, 5) : []));
-    const itemChips = items.filter(x => x.slug && (x.p >= 0.01 || (fs.know.itemKnown && fs.know.item === x.slug))).map(x => `<button type="button" class="sm-chip${fs.know.itemKnown && fs.know.item === x.slug ? ' on' : ''}" data-act="lock-item" data-i="${j}" data-item="${esc(x.slug)}" title="Click to lock as their item">${esc(formatName(x.slug))} <i>${Math.round(x.p * 100)}%</i></button>`).join('') +
-      `<button type="button" class="sm-chip${fs.know.itemKnown && !fs.know.item ? ' on' : ''}" data-act="lock-item" data-i="${j}" data-item="">none / unknown</button>`;
+    // Ability / item: one dropdown each. Closed, it reads out the odds; opening it lets you lock one in (or unlock).
+    const pctTxt = list => list.map(a => `${formatName(a.slug)} ${Math.round(a.p * 100)}%`).join(' / ');
+    const abSelect = abOdds.length > 1 || abLocked ? `<label class="sm-sel"><span>Ability</span><select data-ov="ability" data-i="${j}" title="Odds from usage data${abNarrowed ? ', updated from what you logged' : ''}. Pick one to lock it in.">
+      <option value=""${abLocked ? '' : ' selected'}>${abLocked ? 'Unlock (use odds)' : esc(pctTxt(abOdds.filter(a => a.slug).slice(0, 3)))}</option>
+      ${abOdds.filter(a => a.slug).map(a => `<option value="${esc(a.slug)}"${abLocked && fs.know.ability === a.slug ? ' selected' : ''}>${abLocked && fs.know.ability === a.slug ? '🔒 ' : 'Lock: '}${esc(formatName(a.slug))} (${Math.round(a.p * 100)}%)</option>`).join('')}</select></label>` : '';
+    const items = (inf && inf.items && inf.items.length ? inf.items : (pri ? pri.items.slice().sort((a, b) => b.p - a.p) : [])).filter(x => x.slug && (x.p >= 0.01 || (fs.know.itemKnown && fs.know.item === x.slug))).slice(0, 8);
+    const itemLocked = fs.know.itemKnown;
+    const itemSelect = `<label class="sm-sel"><span>Item</span><select data-ov="item" data-i="${j}" title="Odds from usage data. Pick one to lock it in.">
+      <option value=""${itemLocked ? '' : ' selected'}>${itemLocked ? 'Unlock (use odds)' : esc(pctTxt(items.slice(0, 3)) || 'unknown')}</option>
+      ${items.map(x => `<option value="${esc(x.slug)}"${itemLocked && fs.know.item === x.slug ? ' selected' : ''}>${itemLocked && fs.know.item === x.slug ? '🔒 ' : 'Lock: '}${esc(formatName(x.slug))} (${Math.round(x.p * 100)}%)</option>`).join('')}
+      <option value="__none"${itemLocked && !fs.know.item ? ' selected' : ''}>${itemLocked && !fs.know.item ? '🔒 ' : 'Lock: '}no item</option></select></label>`;
     const revealed = fs.revealed.map(s => `<span class="mvchip" style="background:${typeColor((moveDetails.get(s) || {}).type)}">${esc(formatName(s))}</span>`).join('');
+    const moveRowsHtml = (arr, key) => (!arr.length ? '<div class="sm-dim">No damaging moves known.</div>'
+      : arr.slice(0, 4).join('') + (arr.length > 4 ? det(key, `<span class="sm-dim">${arr.length - 4} more move${arr.length > 5 ? 's' : ''}</span>`, `<div class="sm-moves">${arr.slice(4).join('')}</div>`, false) : ''));
     // rows of "their move → each of my active Pokémon" for a given form of this opponent; myMega adds the numbers vs. one of mine that could still Mega Evolve
     const threatRowsFor = (fsF, infF, monF, myMega) => SimEngine.foeMoveList(monF, foePri(j, fsF), fs.revealed, 6).map(mv => {
       const em = engMove(mv.slug);
@@ -700,19 +760,19 @@
         return `<span class="sm-res"><em class="sm-tg tm">${esc(tgt)}</em><b>${fmtPct(rl.pctMin)}–${fmtPct(rl.pctMax)}%</b><i class="${show.cls}">${show.t}</i><small>max ${fmtPct(rw.pctMax)}%</small>${megaTxt}</span>`;
       }).join('');
       return `<div class="sm-move"><span class="mvchip" style="background:${typeColor(em.type)}">${esc(formatName(mv.slug))}${mv.p ? `<em>${Math.round(mv.p * 100)}%</em>` : ''}</span>${cols}</div>`;
-    }).join('');
-    const threats = threatRowsFor(fs, inf, mon, true);
+    });
+    const threats = moveRowsHtml(threatRowsFor(fs, inf, mon, true), `more:foe:${j}`);
     // what-if: this opponent after Mega Evolving (only while its side still can). Observed stats don't carry over (a Mega's stats differ),
     // so it uses the most likely build narrowed so far.
     const megaBoxes = megaChoices(st, 'foe', j).map(v => {
-      const fsM = withMega(fs, v), mi = inf ? { map: inf.map } : null, mMon = rosterMon(v.name), key = `foe:${j}:${v.name}`, closed = UI.megaClosed.has(key);
+      const fsM = withMega(fs, v), mi = inf ? { map: inf.map } : null, mMon = rosterMon(v.name), key = `foe:${j}:${v.name}`, closed = !UI.megaOpen.has(key);
       const spdM = foeEngine(foeSpec(j, fsM, st.side.foe.conds, mi, 'likely', 'speed'));
       return `<div class="sm-megabox"><div class="sm-mega-head"><b>If it Mega Evolves → ${esc(monDisplayName(v))}</b>
         <span class="sm-types">${v.types.map(tbadge).join('')}</span>
         <span class="sm-dim">${esc(formatName(spdM.ability || '—'))} · Spe ~${spdM.speedFinal}</span>
         <span class="sm-mega-actions"><button type="button" class="sm-go sm-mega-btn" data-act="mega" data-side="foe" data-i="${j}" data-mega="${esc(v.name)}">It Mega Evolved</button>
         <button type="button" class="sm-linkbtn" data-act="mega-toggle" data-key="${esc(key)}">${closed ? 'Show numbers' : 'Hide numbers'}</button></span></div>
-        ${closed ? '' : `<div class="sm-moves"><div class="sm-dim">What ${esc(monDisplayName(v))} threatens</div>${threatRowsFor(fsM, mi, mMon, false) || '<div class="sm-dim">No damaging moves known.</div>'}</div>`}</div>`;
+        ${closed ? '' : `<div class="sm-moves"><div class="sm-dim">What ${esc(monDisplayName(v))} threatens</div>${moveRowsHtml(threatRowsFor(fsM, mi, mMon, false), `more:foe:${j}:${v.name}`)}</div>`}</div>`;
     }).join('');
     const editing = UI.edit && UI.edit.side === 'foe' && UI.edit.i === j;
     const megas = sim.roster.filter(p => p.name === `${S.foe[j].name}-mega` || p.name.startsWith(`${S.foe[j].name}-mega-`));
@@ -722,38 +782,46 @@
         <div class="sm-dim">${ab ? esc(formatName(ab)) + (abLocked ? ' (locked)' : abOdds.length > 1 ? (abNarrowed ? ' (narrowed)' : ' (likely)') : '') : 'ability unknown'}</div></div></div>
       <div class="sm-hp"><div class="hp-track"><div class="hp-fill ${fs.hpPct <= 20 ? 'low' : fs.hpPct <= 50 ? 'mid' : 'ok'}" style="width:${fs.hpPct}%"></div></div><span>${fmtPct(fs.hpPct)}% HP</span></div>
       <div class="sm-stagerow">${stagesHtml('foe', j, fs.boosts)}${statusChip(fs.status)}${fs.mega ? '<span class="sm-stage up">Mega Evolved</span>' : ''}</div>
-      ${abChips ? `<div class="sm-block"><div class="sm-dim">Ability ${abNarrowed && !abLocked ? '<small>(odds updated from what you logged)</small>' : abLocked ? '<small>(locked — click again to unlock)</small>' : '<small>(usage odds — click to lock one in)</small>'}</div><div class="sm-chips">${abChips}</div></div>` : ''}
-      <div class="sm-block"><div class="sm-dim">Holds</div><div class="sm-chips">${itemChips}</div></div>
-      ${revealed ? `<div class="sm-block"><div class="sm-dim">Revealed moves</div><div class="sm-chips">${revealed}</div></div>` : ''}
-      <div class="sm-moves"><div class="sm-dim">What they threaten — each of your active Pokémon <small>(likely · max-investment)</small></div>${threats || '<div class="sm-dim">No damaging moves known.</div>'}</div>
+      <div class="sm-selrow">${abSelect}${itemSelect}</div>
+      ${revealed ? `<div class="sm-seen"><span class="sm-dim">Seen</span> ${revealed}</div>` : ''}
+      <div class="sm-moves"><div class="sm-dim">What they threaten <small>(likely · max-investment)</small></div>${threats}</div>
       ${megaBoxes}
       ${narrowHtml(j, inf, mon)}
       <button type="button" class="sm-linkbtn" data-act="edit" data-side="foe" data-i="${j}">${editing ? 'Close overrides' : 'Override…'}</button>${editing ? overrideHtml('foe', j, st, megas) : ''}</div>`;
   }
 
   function narrowHtml(j, inf, mon) {
-    if (!inf || !inf.n) return `<div class="sm-narrow sm-dim">Log their attacks and your hits to narrow down their stats.</div>`;
-    const rangeLine = (k, label) => {
-      const r = inf.ranges[k]; if (!r) return '';
-      if (!r.vals.length) return `<div>${label}: <b class="bad">no value fits</b></div>`;
-      const full = SimEngine.statCandidates(mon.stats[k], k, isChamp(), level());
-      const tight = r.vals.length < full.length;
-      return `<div>${label}: <b>${r.min === r.max ? r.min : `${r.min}–${r.max}`}</b>${tight ? '' : ' <span class="sm-dim">(anything)</span>'}</div>`;
+    if (!inf || !inf.n) return `<div class="sm-narrow-hint sm-dim">Log their attacks and your hits to narrow down their stats.</div>`;
+    // Only what has actually been narrowed is shown: a stat that could still be anything is left out (Speed lives in the Speed tiers panel).
+    const champ = isChamp(), lv = level();
+    const isTight = k => { const r = inf.ranges[k]; return !!r && r.vals.length > 0 && r.vals.length < SimEngine.statCandidates(mon.stats[k], k, champ, lv).length; };
+    const rng = k => { const r = inf.ranges[k]; return r.min === r.max ? `${r.min}` : `${r.min}–${r.max}`; };
+    const rows = [];
+    for (const k of ['attack', 'special-attack']) if (isTight(k)) rows.push(`<div class="sm-stat"><span>${STAT_LABELS[k]}</span><b>${rng(k)}</b></div>`);
+    // How bulky it could be: HP × defence relative to the whole legal range (uninvested → max). Shown even when HP and Def alone are each wide open,
+    // because a big HP with little Def and the reverse can give the same bulk.
+    const bulkRow = (k, label) => {
+      const b = inf.bulk && inf.bulk[k]; if (!b || !isFinite(b.min) || !(b.fullMax > b.fullMin)) return '';
+      const span = b.fullMax - b.fullMin, lo = clamp((b.min - b.fullMin) / span, 0, 1), hi = clamp((b.max - b.fullMin) / span, 0, 1);
+      if (lo <= 0.02 && hi >= 0.98) return '';
+      const mid = (lo + hi) / 2, word = hi - lo > 0.6 ? 'not pinned down' : mid >= 0.8 ? 'very bulky' : mid >= 0.55 ? 'bulky' : mid >= 0.3 ? 'average' : 'frail';
+      const parts = []; if (isTight('hp')) parts.push(`HP ${rng('hp')}`); if (isTight(k)) parts.push(`${STAT_LABELS[k]} ${rng(k)}`);
+      return `<div class="sm-bulk" title="${label}: HP × ${STAT_LABELS[k]} could be anywhere from ${Math.round(lo * 100)}% to ${Math.round(hi * 100)}% of the way between an uninvested and a fully invested build">
+        <div class="sm-bulk-top"><span>${label}</span><b>${word}</b></div>
+        <div class="sm-bulk-track"><i style="left:${(lo * 100).toFixed(1)}%;width:${Math.max(2, (hi - lo) * 100).toFixed(1)}%"></i></div>
+        <div class="sm-bulk-ends"><span>uninvested</span><span>max</span></div>${parts.length ? `<div class="sm-dim">${parts.join(' · ')}</div>` : ''}</div>`;
     };
-    const lines = ['attack', 'special-attack', 'hp', 'defense', 'special-defense', 'speed'].map(k => rangeLine(k, STAT_LABELS[k])).join('');
-    const builds = inf.builds.slice(0, 3).map(b => `<div class="sm-build">${esc(formatName(b.nature))} · ${STAT_KEYS.filter(k => b.sp[k] > 0).map(k => `${b.sp[k]} ${STAT_LABELS[k]}`).join(' / ') || 'no investment'} <i>${Math.round(b.p * 100)}%</i></div>`).join('');
-    const items = inf.items.slice(0, 3).filter(x => x.slug).map(x => `${esc(formatName(x.slug))} ${Math.round(x.p * 100)}%`).join(' · ');
-    const abilities = inf.abilities && inf.abilities.length > 1 ? inf.abilities.filter(x => x.slug).map(x => `${esc(formatName(x.slug))} ${Math.round(x.p * 100)}%`).join(' · ') : '';
+    rows.push(bulkRow('defense', 'Physical bulk'), bulkRow('special-defense', 'Special bulk'));
     const ruledOut = mon.abilities.length > 1 && inf.abilities && inf.abilities.length === 1 && inf.abilities[0].slug ? formatName(inf.abilities[0].slug) : '';
     const empties = Object.entries(inf.ranges).filter(([, r]) => !r.vals.length).map(([k]) => k);
     const why = [];
     if (empties.includes('speed')) why.push('their Speed can\'t match the move order you logged (Choice Scarf, Tailwind, Trick Room or a priority move?)');
     if (empties.some(k => k === 'attack' || k === 'special-attack')) why.push('no attacking stat produces the damage you entered (check the number, crit, stat changes, or an unrevealed item or ability)');
     if (empties.some(k => k === 'hp' || k === 'defense' || k === 'special-defense')) why.push('no HP/defence combination gives that percentage (check the % and any stat changes)');
-    return `<div class="sm-narrow"><div class="sm-dim">Narrowed from ${inf.n} observation${inf.n > 1 ? 's' : ''}</div>
-      ${inf.impossible ? `<div><b class="bad">Nothing fits:</b> ${esc(why.join('; ') || 'the logged results contradict each other')}.</div>` : ''}${lines}
-      ${builds ? `<div class="sm-dim">Most likely builds</div>${builds}` : ''}${items ? `<div class="sm-dim">Item odds: ${items}</div>` : ''}
-      ${abilities ? `<div class="sm-dim">Ability odds: ${abilities}</div>` : ''}${ruledOut ? `<div class="sm-dim">Everything else ruled out — it must be <b>${esc(ruledOut)}</b>.</div>` : ''}</div>`;
+    const body = `${inf.impossible ? `<div><b class="bad">Nothing fits:</b> ${esc(why.join('; ') || 'the logged results contradict each other')}.</div>` : ''}${rows.join('')}
+      ${ruledOut ? `<div class="sm-dim">Everything else ruled out — it must be <b>${esc(ruledOut)}</b>.</div>` : ''}
+      ${!rows.join('').trim() && !inf.impossible && !ruledOut ? '<div class="sm-dim">Nothing ruled out yet — every stat is still possible.</div>' : ''}`;
+    return `<div class="sm-narrow">${det(`narrow:${j}`, `<b>Learned so far</b> <span class="sm-dim">${inf.n} log${inf.n > 1 ? 's' : ''}</span>`, `<div class="sm-narrow-body">${body}</div>`, true)}</div>`;
   }
 
   function overrideHtml(side, i, st, extra) {
@@ -790,6 +858,7 @@
         <div class="sm-fld"><span>Field</span><details class="calc-dd"><summary>Field effects${nF ? ' · ' + nF : ''}</summary><div class="calc-dd-body">${FIELD_TOGGLES.map(([k, l]) => `<label class="chk"><input type="checkbox" data-ov="field-t" data-key="${k}"${f[k] ? ' checked' : ''}> ${l}</label>`).join('')}</div></details></div>
         <div class="sm-fld"><span>Your side</span>${dd('mine', 'Conditions')}</div><div class="sm-fld"><span>Their side</span>${dd('foe', 'Conditions')}</div>
       </div>
+      <label class="chk sm-resid"><input type="checkbox" data-ov="residual"${S.autoResidual !== false ? ' checked' : ''}> Apply end-of-turn damage <span class="sm-dim">(poison, burn, sand, Leftovers…)</span></label>
       ${Object.keys(st.timers).length ? `<div class="sm-timers">${Object.values(st.timers).filter(t => t.label).map(t => `<span class="sm-chip"><b>${esc(t.label)}</b> <i>${t.left} more turn${t.left > 1 ? 's' : ''}</i></span>`).join('')}</div>` : ''}
       </div>`;
   }
@@ -857,11 +926,13 @@
       const lab = a.s === 'mine' ? (S.myTeam[a.i].nickname || S.myTeam[a.i].displayName) : monDisplayName(foeMonOf(a.i, st.foe[a.i]));
       const mine = a.s === 'mine', forced = pool.length === 1 && (mode === 'self' || mode === 'ally');
       const canImmune = !isStatus && a.s !== side;
-      return `<div class="sm-trow${isOn ? ' on' : ''}">${forced ? `<span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span>`
-        : `<label class="chk"><input type="${mode === 'single' ? 'radio' : 'checkbox'}" name="sim-target" data-cmp="target" data-s="${a.s}" data-i="${a.i}"${isOn ? ' checked' : ''}> <span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span></label>`}
-        ${isOn && (showHp || canImmune) ? `<span class="sm-lost">${showHp && !(t && t.immune) ? `<input type="number" min="0" step="${mine ? 1 : 0.5}" data-cmp="left" data-s="${a.s}" data-i="${a.i}" placeholder="${mine ? `HP left (now ${st.mine[a.i].hp})` : `% left (now ${fmtPct(st.foe[a.i].hpPct)})`}" value="${t.left ?? ''}"><small>${mine ? 'HP it has after the move' : 'HP bar % after the move'}</small>
-          <label class="chk"><input type="checkbox" data-cmp="faint" data-s="${a.s}" data-i="${a.i}"${t.fainted ? ' checked' : ''}> fainted</label>` : ''}
-          ${canImmune ? `<label class="chk" title="It didn't affect the target — reveals an immunity ability like Levitate or Flash Fire"><input type="checkbox" data-cmp="immune" data-s="${a.s}" data-i="${a.i}"${t.immune ? ' checked' : ''}> no effect</label>` : ''}</span>` : ''}</div>`;
+      // KO: one click selects this target, marks it knocked out by the move, and logs the action
+      const koBtn = isStatus ? '' : `<button type="button" class="sm-ko${t && t.fainted ? ' on' : ''}" data-act="ko-target" data-s="${a.s}" data-i="${a.i}" title="${t && t.fainted ? 'Marked as knocked out (click to undo)' : 'This move knocks it out — logs the action right away'}">${t && t.fainted ? 'KO’d ✓' : 'KO'}</button>`;
+      const fainted = !!(t && t.fainted);
+      return `<div class="sm-trow${isOn ? ' on' : ''}"><div class="sm-trow-top">${forced ? `<span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span>`
+        : `<label class="chk"><input type="${mode === 'single' ? 'radio' : 'checkbox'}" name="sim-target" data-cmp="target" data-s="${a.s}" data-i="${a.i}"${isOn ? ' checked' : ''}> <span class="${mine ? 'tm' : 'tf'}">${esc(lab)}</span></label>`}${koBtn}</div>
+        ${isOn && (showHp || canImmune) ? `<span class="sm-lost">${showHp && !(t && t.immune) && !fainted ? `<input type="number" min="0" step="${mine ? 1 : 0.5}" data-cmp="left" data-s="${a.s}" data-i="${a.i}" placeholder="${mine ? `HP left (now ${st.mine[a.i].hp})` : `% left (now ${fmtPct(st.foe[a.i].hpPct)})`}" value="${t.left ?? ''}"><small>${mine ? 'HP after the move' : '% after the move'}</small>` : fainted ? '<small>Knocked out by this move.</small>' : ''}
+          ${canImmune && !fainted ? `<label class="chk" title="It didn't affect the target — reveals an immunity ability like Levitate or Flash Fire"><input type="checkbox" data-cmp="immune" data-s="${a.s}" data-i="${a.i}"${t.immune ? ' checked' : ''}> no effect</label>` : ''}</span>` : ''}</div>`;
     }).join('');
     const prompt = !sel ? '' : mode === 'field' ? `<div class="sm-dim">${esc(fieldMoveSummary(sel, side))} No target needed.</div>`
       : mode === 'self' ? `<div class="sm-dim">${heals ? 'It heals itself — enter the HP it has now.' : 'It only affects the user — nothing to enter.'}</div>`
@@ -903,13 +974,33 @@
     return `Applied automatically — ${parts.join('; ')}.`;
   }
 
+  /** A collapsible section whose open/closed state survives re-renders. */
+  const det = (key, summary, body, defOpen) => `<details class="sm-det" data-keep="${key}"${(UI.open[key] === undefined ? defOpen : UI.open[key]) ? ' open' : ''}><summary>${summary}</summary>${body}</details>`;
+  function fieldSummary(st) {
+    const f = st.field, bits = [];
+    const w = WEATHER_OPTS.find(o => o[0] === f.weather), t = TERRAIN_OPTS.find(o => o[0] === f.terrain);
+    if (w && w[0]) bits.push(w[1]); if (t && t[0]) bits.push(t[1] + ' Terrain');
+    FIELD_TOGGLES.forEach(([k, l]) => { if (f[k]) bits.push(l); });
+    for (const [side, who] of [['mine', 'yours'], ['foe', 'theirs']]) {
+      const c = st.side[side].conds, on = SIDE_TOGGLES.filter(([k]) => c[k]).map(([, l]) => l); if (c.spikes > 0) on.push('Spikes');
+      if (on.length) bits.push(`${on.join(', ')} (${who})`);
+    }
+    return bits.length ? bits.join(' · ') : 'nothing active';
+  }
   function centerHtml(st, actM, actF) {
-    const logs = S.log.map((ev, k) => `<div class="sm-log-line t-${ev.t}">${logLine(ev, st)}</div>`).join('') || '<div class="sm-dim">Nothing logged yet.</div>';
-    return `<section class="sm-card"><div class="sm-turnbar"><b>Turn ${st.turn}</b>
-        <button type="button" class="reset-btn" data-act="next-turn">End turn →</button><button type="button" class="reset-btn" data-act="undo"${S.log.length ? '' : ' disabled'}>Undo last</button></div>
+    const lines = [];
+    const last = S.log.length ? S.log[S.log.length - 1] : null;
+    S.log.forEach(ev => {
+      if (ev.t === 'turn') (st.resNotes.get(ev) || []).forEach(n => lines.push(`<div class="sm-log-line t-res">End of turn · ${esc(n)}</div>`));
+      lines.push(`<div class="sm-log-line t-${ev.t}">${logLine(ev, st)}</div>`);
+    });
+    // the log shows the newest entries first-visible: scroll position is kept at the bottom by the CSS (column-reverse)
+    const logs = lines.length ? lines.reverse().join('') : '<div class="sm-dim">Nothing logged yet.</div>';
+    return `<section class="sm-card sm-turncard"><div class="sm-turnbar"><b>Turn ${st.turn}</b>
+        <button type="button" class="reset-btn" data-act="next-turn">End turn →</button><button type="button" class="reset-btn" data-act="undo"${S.log.length ? '' : ' disabled'}>Undo</button></div>
       ${composerHtml(st)}</section>
-      <section class="sm-card"><h3>Field &amp; overrides</h3>${fieldHtml(st)}</section>
-      <section class="sm-card"><h3>Battle log</h3><div class="sm-log">${logs}</div></section>`;
+      <section class="sm-card sm-fieldcard">${det('field', `<b>Field &amp; overrides</b> <span class="sm-dim">${esc(fieldSummary(st))}</span>`, fieldHtml(st), false)}</section>
+      <section class="sm-card sm-logcard">${det('log', `<b>Battle log</b> <span class="sm-dim">${S.log.length ? S.log.length + ' entries · newest first' : 'empty'}</span>`, `<div class="sm-log">${logs}</div>`, true)}</section>`;
   }
 
   function speedLadderHtml(st, infer, actM, actF) {
@@ -943,11 +1034,13 @@
     const pos = v => (v / max * 100).toFixed(1);
     const order = rows.slice().sort((a, b) => b.likely - a.likely);
     const tr = st.field.trickRoom;
-    return `<section class="sm-card"><h3>Speed tiers ${tr ? '<span class="sm-stage down">Trick Room</span>' : ''}</h3>
-      ${order.map(r => `<div class="sm-spd${r.mega ? ' mega' : ''}"><span class="sm-spd-name ${r.side === 'mine' ? 'tm' : 'tf'}">${r.mega ? 'If ' : ''}${esc(r.label)}</span>
+    return `<section class="sm-card sm-speedcard">${det('speed', `<b>Speed tiers</b> ${tr ? '<span class="sm-stage down">Trick Room</span>' : ''}`, speedBody(order, pos, tr), true)}</section>`;
+  }
+  function speedBody(order, pos, tr) {
+    return `${order.map(r => `<div class="sm-spd${r.mega ? ' mega' : ''}"><span class="sm-spd-name ${r.side === 'mine' ? 'tm' : 'tf'}">${r.mega ? 'If ' : ''}${esc(r.label)}</span>
         <div class="sm-spd-track">${r.side === 'foe' ? `<div class="sm-spd-range" style="left:${pos(r.lo)}%;width:${Math.max(0.8, pos(r.hi) - pos(r.lo))}%"></div>${r.scarf ? `<div class="sm-spd-scarf" style="left:${pos(r.scarf.lo)}%;width:${Math.max(0.8, pos(r.scarf.hi) - pos(r.scarf.lo))}%" title="If Choice Scarf (${Math.round(r.scarf.p * 100)}% usage)"></div>` : ''}` : ''}<div class="sm-spd-tick" style="left:${pos(r.likely)}%"></div></div>
         <span class="sm-spd-val">${r.side === 'mine' || r.lo === r.hi ? r.likely : `${r.lo}–${r.hi}`}</span></div>`).join('')}
-      <div class="sm-dim">Bars are possible Speed ranges (with stages, Tailwind and paralysis applied); the tick is the most likely value. Hatched = if Choice Scarf (shown only when it's commonly run). Faded "If …" rows = after Mega Evolving; they disappear once a Pokémon on that side has Mega Evolved.</div></section>`;
+      <div class="sm-dim sm-foot">Bar = possible Speed (stages, Tailwind, paralysis applied) · tick = most likely · hatched = Choice Scarf · faded "If …" = after Mega Evolving.</div>`;
   }
 
   // ---------- actions ----------
@@ -968,6 +1061,19 @@
     });
     const ev = { t: 'move', turn: st.turn, actor: { s: c.side, i: c.i }, move: c.move, crit: !!c.crit, missed: !!c.missed, hits: c.hits || 0, targets, snap: captureSnap(st, { s: c.side, i: c.i }, targets) };
     pushEvent(ev); UI.composer = null; render();
+  }
+  /** "KO" button on a target row: select that target, mark it knocked out by this move, and log the action straight away. */
+  function koTarget(s, i) {
+    const c = UI.composer; if (!c || !c.move) return;
+    const mode = targetMode(c.move);
+    let t = c.targets.find(x => x.s === s && x.i === i);
+    if (!t) { t = { s, i, left: '' }; c.targets = mode === 'single' ? [t] : c.targets.concat(t); }
+    if (t.fainted) { t.fainted = false; render(); return; }   // second click undoes it
+    t.fainted = true; t.left = ''; t.immune = false;
+    // log right away unless another selected target still needs its HP entered (spread moves)
+    const pending = c.targets.some(x => x !== t && !x.fainted && !x.immune && (x.left === '' || x.left == null));
+    if (pending) { render(); return; }
+    addAction();
   }
   function openComposer(side, i) {
     UI.composer = { side, i, move: null, targets: [], crit: false, missed: false, hits: 0 };
@@ -1026,6 +1132,7 @@
       case 'cancel-composer': UI.composer = null; render(); break;
       case 'pick-move': setMove(d.move); break;
       case 'add-action': addAction(); break;
+      case 'ko-target': koTarget(d.s, +d.i); break;
       case 'next-turn': { const st = replay(); pushEvent({ t: 'turn', n: st.turn + 1 }); UI.composer = null; render(); break; }
       case 'undo': S.log.pop(); UI.inferCache = null; save(); render(); break;
       case 'edit': UI.edit = UI.edit && UI.edit.side === d.side && UI.edit.i === i ? null : { side: d.side, i }; render(); break;
@@ -1038,7 +1145,7 @@
         pushEvent({ t: 'know', i, what: 'ability', value: same ? null : d.ab, locked: !same }); render(); break;
       }
       case 'mega': pushEvent({ t: 'set', what: 'mega', side: d.side, i, value: d.mega }); render(); break;
-      case 'mega-toggle': if (UI.megaClosed.has(d.key)) UI.megaClosed.delete(d.key); else UI.megaClosed.add(d.key); render(); break;
+      case 'mega-toggle': if (UI.megaOpen.has(d.key)) UI.megaOpen.delete(d.key); else UI.megaOpen.add(d.key); render(); break;
       case 'revive': pushEvent({ t: 'set', what: 'revive', side: d.side, i }); render(); break;
       case 'sendout': sendOut(d.side, i); break;
     }
@@ -1073,6 +1180,8 @@
       case 'field-t': pushEvent({ t: 'set', what: 'field', key, value: t.checked }); break;
       case 'cond': pushEvent({ t: 'set', what: 'cond', side, key, value: t.checked }); break;
       case 'spikes': pushEvent({ t: 'set', what: 'cond', side, key: 'spikes', value: Number(t.value) }); break;
+      case 'residual': S.autoResidual = t.checked; UI.inferCache = null; save(); break;
+      case 'item': { const v = t.value; pushEvent({ t: 'know', i, what: 'item', value: v === '' || v === '__none' ? null : v, locked: v !== '' }); break; }
       default: return;
     }
     // keep any open checklist dropdowns open across the re-render (their structure is identical, so index order is stable)
@@ -1158,6 +1267,8 @@
     root = document.getElementById('sim-view');
     buildShell(); restore(); setModeToggle();
     root.addEventListener('click', onClick); root.addEventListener('change', onChange); root.addEventListener('input', onInput);
+    // remember which collapsible sections are open (toggle doesn't bubble, so listen in the capture phase)
+    root.addEventListener('toggle', e => { const d = e.target; if (d && d.dataset && d.dataset.keep) UI.open[d.dataset.keep] = d.open; }, true);
     root.addEventListener('focusin', e => { if (e.target.matches && e.target.matches('[data-picker="foe"]')) { e.target.select(); openPicker(e.target); } });
     document.addEventListener('click', e => { if (root && !e.target.closest('.calc-picker')) root.querySelectorAll('.option-dropdown.open').forEach(d => d.classList.remove('open')); });
     await applyGame(S.game, true);

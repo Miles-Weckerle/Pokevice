@@ -245,7 +245,7 @@ const SimEngine = (() => {
    * ctx: { champ, level, pri, know, abilities:[{slug,p}] }
    */
   function inferFoe(foe, obsList, ctx) {
-    const out = { n: obsList.length, builds: [], items: [], abilities: [], map: null, ranges: {}, impossible: false };
+    const out = { n: obsList.length, builds: [], items: [], abilities: [], map: null, ranges: {}, bulk: {}, impossible: false };
     if (!obsList.length) return out;
     const { champ, level, pri, know } = ctx;
     const base = foe.base;
@@ -290,10 +290,11 @@ const SimEngine = (() => {
         }
         r[key] = rangeOf(feasible);
       }
+      const bulkProd = {};   // key -> { min, max } of HP * defence over every feasible (HP, defence) pair: "how bulky could it be"
       if (bulk.length) {
         const hpVals = statCandidates(base.hp, 'hp', champ, level).map(c => c.val);
         const feasibleH = new Set(), feasibleDef = {};
-        for (const k of defKeys) feasibleDef[k] = new Set();
+        for (const k of defKeys) { feasibleDef[k] = new Set(); bulkProd[k] = { min: Infinity, max: 0 }; }
         for (const item of defItems) {
           const defVals = {};
           for (const key of defKeys) defVals[key] = statCandidates(base[key], key, champ, level).map(c => c.val);
@@ -304,7 +305,13 @@ const SimEngine = (() => {
               okVals[key] = defVals[key].filter(dv => bulk.every((o, i) => o.defKey !== key || bulkFits(o, bulkSumsC(o, i, dv, item, ab), H)));
               if (!okVals[key].length) { allKeysOk = false; break; }
             }
-            if (allKeysOk) { feasibleH.add(H); for (const key of defKeys) okVals[key].forEach(v => feasibleDef[key].add(v)); }
+            if (allKeysOk) {
+              feasibleH.add(H);
+              for (const key of defKeys) okVals[key].forEach(v => {
+                feasibleDef[key].add(v);
+                const pr = H * v; if (pr < bulkProd[key].min) bulkProd[key].min = pr; if (pr > bulkProd[key].max) bulkProd[key].max = pr;
+              });
+            }
           }
         }
         r.hp = rangeOf(feasibleH);
@@ -317,6 +324,7 @@ const SimEngine = (() => {
         }
         r.speed = rangeOf(feasible);
       }
+      Object.defineProperty(r, '_bulk', { value: bulkProd, enumerable: false });
       return r;
     };
     const perAb = abilities.map(a => ({ a, r: rangesFor(a.slug) }));
@@ -326,6 +334,19 @@ const SimEngine = (() => {
     for (const k of keys) {
       const union = new Set(); pool.forEach(x => (x.r[k] ? x.r[k].vals : []).forEach(v => union.add(v)));
       out.ranges[k] = rangeOf(union);
+    }
+    // joint bulk (HP x defence) bounds against the full legal range, so "how bulky is it" can be shown even when HP and Def alone are both wide open
+    for (const x of pool) {
+      const b = x.r._bulk; if (!b) continue;
+      for (const k of Object.keys(b)) {
+        if (!(b[k].max > 0)) continue;
+        const o = out.bulk[k] || (out.bulk[k] = { min: Infinity, max: 0 });
+        o.min = Math.min(o.min, b[k].min); o.max = Math.max(o.max, b[k].max);
+      }
+    }
+    for (const k of Object.keys(out.bulk)) {
+      const hs = statCandidates(base.hp, 'hp', champ, level), ds = statCandidates(base[k], k, champ, level);
+      out.bulk[k].fullMin = hs[0].val * ds[0].val; out.bulk[k].fullMax = hs[hs.length - 1].val * ds[ds.length - 1].val;
     }
     out.impossible = !abilities.length || (!viable.length && Object.keys(out.ranges).length > 0 && Object.values(out.ranges).some(r => !r.vals.length));
     // Without a usage-based posterior, the ability odds are just the prior limited to the hypotheses that survive.
